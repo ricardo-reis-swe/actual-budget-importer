@@ -36,14 +36,16 @@ function dateRange(statement: StatementSummary): string | undefined {
 }
 
 function StatementList({ statements }: { statements: StatementSummary[] }) {
-  return <ul>
+  return <ul className="statement-list">
     {statements.map((statement) => {
       const range = dateRange(statement);
       return <li key={statement.id}>
-        <a href={`?statementId=${encodeURIComponent(statement.id)}`}>{sourceName(statement)}</a>
-        <p>{statement.status}{statement.parserId ? ` · ${statement.parserId}` : ''}</p>
-        <p>{messages.dashboard.transactionCount(statement.transactionCount)}{range ? ` · ${range}` : ''}</p>
-        {statement.paperlessCorrespondentName && <p>Paperless-ngx: {statement.paperlessCorrespondentName}</p>}
+        <a className="statement-card" href={`?statementId=${encodeURIComponent(statement.id)}`}>
+          <span className="statement-card-heading">{sourceName(statement)}</span>
+          <span className="statement-card-meta">{statement.status}{statement.parserId ? ` · ${statement.parserId}` : ''}</span>
+          <span className="statement-card-meta">{messages.dashboard.transactionCount(statement.transactionCount)}{range ? ` · ${range}` : ''}</span>
+          {statement.paperlessCorrespondentName && <span className="statement-card-meta">Paperless-ngx · {statement.paperlessCorrespondentName}</span>}
+        </a>
       </li>;
     })}
   </ul>;
@@ -113,16 +115,21 @@ function UploadForm() {
 export function StatementDashboard() {
   const [statements, setStatements] = useState<StatementSummary[]>();
   const [error, setError] = useState<string>();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
+  const loadStatements = () => {
+    setIsRefreshing(true);
     void fetch('/api/statements')
       .then(async (response) => {
         if (!response.ok) throw new Error(messages.dashboard.loadError);
         return response.json() as Promise<{ statements: StatementSummary[] }>;
       })
-      .then((loaded) => setStatements(loaded.statements))
-      .catch(() => setError(messages.dashboard.loadError));
-  }, []);
+      .then((loaded) => { setStatements(loaded.statements); setError(undefined); })
+      .catch(() => setError(messages.dashboard.loadError))
+      .finally(() => setIsRefreshing(false));
+  };
+
+  useEffect(loadStatements, []);
 
   const grouped = useMemo(() => {
     const nonPublished = statements?.filter((statement) => statement.status !== 'published') ?? [];
@@ -137,9 +144,16 @@ export function StatementDashboard() {
   if (!statements) return <main><p>{messages.dashboard.loading}</p></main>;
 
   return <main>
-    <h1>{messages.dashboard.title}</h1>
+    <header className="dashboard-header">
+      <div><p className="eyebrow">Statement workspace</p><h1>{messages.dashboard.title}</h1><p>Review, categorize, and publish your imported statements.</p></div>
+      <button type="button" onClick={loadStatements} disabled={isRefreshing}>{isRefreshing ? 'Refreshing…' : 'Refresh'}</button>
+    </header>
     <UploadForm />
-    <p>{messages.dashboard.needsAttention}: {grouped.attention.length}</p>
+    <section className="dashboard-stats" aria-label="Statement summary">
+      <div className="stat-card"><strong>{grouped.attention.length}</strong><span>{messages.dashboard.needsAttention}</span></div>
+      <div className="stat-card"><strong>{grouped.review.length}</strong><span>{messages.dashboard.review}</span></div>
+      <div className="stat-card"><strong>{grouped.published.length}</strong><span>{messages.dashboard.published}</span></div>
+    </section>
     {grouped.attention.length > 0 && <section aria-labelledby="attention-heading">
       <h2 id="attention-heading">{messages.dashboard.needsAttention}</h2>
       <StatementList statements={grouped.attention} />

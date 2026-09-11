@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 
 import { StatementDashboard } from './statement-dashboard.js';
 import { StatementReviewPage } from './statement-review-page.js';
+import './styles.css';
 
 const statementId = new URLSearchParams(window.location.search).get('statementId');
 
