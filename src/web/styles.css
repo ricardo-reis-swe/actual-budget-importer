@@ -34,10 +34,35 @@ form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; border: 1px 
 form label { display: flex; min-width: 210px; flex: 1; flex-direction: column; gap: .35rem; color: #334155; font-size: .9rem; font-weight: 650; }
 form input, form select { border: 1px solid #cbd5e1; border-radius: .5rem; background: white; padding: .65rem; }
 form button { flex: 0 0 auto; }
+.back-link { color: #4967d8; font-size: .9rem; font-weight: 700; text-decoration: none; }
+.review-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: 1.25rem 0 1.5rem; }
+.review-header h1 { margin: 0; color: #13213a; font-size: clamp(1.8rem, 4vw, 2.7rem); letter-spacing: -.04em; }
+.review-context { margin: .35rem 0 0; color: #64748b; }
+.status-pill { border-radius: 999px; background: #e0e7ff; color: #3730a3; padding: .4rem .75rem; font-size: .8rem; font-weight: 750; text-transform: capitalize; white-space: nowrap; }
+.status-published { background: #dcfce7; color: #166534; }
+.status-publish-failed, .status-extraction-failed { background: #fee2e2; color: #991b1b; }
+.review-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1.5rem 0; }
+.review-summary div { display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: .8rem; background: #fff; padding: 1rem; }
+.review-summary strong { color: #13213a; font-size: 1.35rem; }
+.review-summary span { color: #64748b; font-size: .82rem; }
+.review-actions { display: flex; justify-content: flex-end; margin: 1rem 0; }
+.transaction-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: .9rem; background: #fff; }
+.transaction-table { width: 100%; border-collapse: collapse; min-width: 700px; }
+.transaction-table th { background: #f8fafc; color: #64748b; font-size: .75rem; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+.transaction-table th, .transaction-table td { border-bottom: 1px solid #eef2f7; padding: .85rem 1rem; vertical-align: middle; }
+.transaction-table tr:last-child td { border-bottom: 0; }
+.transaction-table td:nth-child(3) { font-variant-numeric: tabular-nums; text-align: right; }
+.transaction-table tr:has(td:nth-child(5) br) { opacity: .55; }
+.review-page > section[aria-label="Edit transaction"] { position: sticky; bottom: 1rem; border: 1px solid #c7d2fe; border-radius: .9rem; background: #fff; padding: 1.25rem; box-shadow: 0 12px 30px #263b6820; }
+.review-page > section[aria-label="Edit transaction"] label { display: inline-flex; min-width: 180px; margin: .4rem .75rem .4rem 0; flex-direction: column; gap: .3rem; color: #334155; font-size: .85rem; font-weight: 650; }
+.review-page > section[aria-label="Edit transaction"] input:not([type="checkbox"]), .review-page > section[aria-label="Edit transaction"] select { border: 1px solid #cbd5e1; border-radius: .45rem; padding: .55rem; }
+.review-page > section[aria-label="Edit transaction"] button { margin: .5rem .5rem 0 0; }
 
 @media (max-width: 650px) {
   main { padding-top: 2rem; }
   .dashboard-header { flex-direction: column; }
   .dashboard-header button { width: 100%; }
   .dashboard-stats { grid-template-columns: 1fr; }
+  .review-header { flex-direction: column; }
+  .review-summary { grid-template-columns: 1fr; }
 }

@@ -18,6 +18,8 @@ interface StatementDetail {
   originalFilename: string | null;
   status: string;
   transactions: StatementTransaction[];
+  parserId: string | null;
+  paperless: { correspondentName: string | null; documentDate: string | null };
 }
 
 interface ReviewDraft {
@@ -67,6 +69,13 @@ function reviewUpdate(transaction: StatementTransaction, draft: ReviewDraft): Re
 
 function formatCents(cents: number): string {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' }).format(cents / 100);
+}
+
+function totalCents(statement: StatementDetail, drafts: Record<number, ReviewDraft>): number {
+  return statement.transactions.reduce((total, transaction) => {
+    const draft = drafts[transaction.id];
+    return draft?.excluded ? total : total + Number(draft?.amountCents ?? transaction.amountCents);
+  }, 0);
 }
 
 export function StatementReviewPage() {
@@ -126,6 +135,15 @@ export function StatementReviewPage() {
       setError('Enter an amount in cents.');
       return;
     }
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(drafts[selectedTransaction.id]!.date)) {
+      setError('Enter a date in DD-MM-YYYY format.');
+      return;
+    }
+    if (!drafts[selectedTransaction.id]!.description.trim()) {
+      setError('Enter a transaction description.');
+      return;
+    }
+    setError(undefined);
     setIsSaving(true);
   };
 
@@ -165,12 +183,19 @@ export function StatementReviewPage() {
       .finally(() => setIsPublishing(false));
   };
 
-  return <main>
-    <h1>{statement.originalFilename ?? `Statement ${statement.id}`}</h1>
+  return <main className="review-page">
+    <a className="back-link" href="/">← Back to statements</a>
+    <header className="review-header">
+      <div><p className="eyebrow">Statement review</p><h1>{statement.originalFilename ?? `Statement ${statement.id}`}</h1>
+        <p className="review-context">{statement.paperless.correspondentName ?? 'Uploaded statement'}{statement.parserId ? ` · ${statement.parserId}` : ''}{statement.paperless.documentDate ? ` · ${statement.paperless.documentDate}` : ''}</p>
+      </div>
+      <span className={`status-pill status-${statement.status.replaceAll(' ', '-')}`}>{statement.status}</span>
+    </header>
     {statement.errorMessage && <p role="alert">{statement.errorMessage}</p>}
     {readOnly && <p role="status">This statement has been published and is read-only.</p>}
-    {canPublish && <button type="button" onClick={publish} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}
-    <table>
+    <section className="review-summary" aria-label="Review summary"><div><strong>{statement.transactions.length}</strong><span>Transactions</span></div><div><strong>{statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded).length}</strong><span>Included</span></div><div><strong>{formatCents(totalCents(statement, drafts))}</strong><span>Included total</span></div></section>
+    <div className="review-actions">{canPublish && <button type="button" onClick={publish} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}</div>
+    <div className="transaction-table-wrap"><table className="transaction-table">
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>
       <tbody>{statement.transactions.map((transaction) => {
         const draft = drafts[transaction.id]!;
@@ -181,7 +206,7 @@ export function StatementReviewPage() {
           <td>{!readOnly && <button type="button" onClick={() => { setSelectedTransactionId(transaction.id); setIsSaving(false); }}>Edit</button>}</td>
         </tr>;
       })}</tbody>
-    </table>
+    </table></div>
     {selectedTransaction && <section aria-label="Edit transaction">
       <h2>{isSaving ? 'Confirm review changes' : 'Edit transaction'}</h2>
       {isSaving ? <>
@@ -199,7 +224,7 @@ export function StatementReviewPage() {
         <label><input type="checkbox" checked={drafts[selectedTransaction.id]!.excluded} onChange={(event) => updateDraft('excluded', event.target.checked)} disabled={readOnly} /> Exclude transaction</label>
         {!readOnly && <button type="button" onClick={requestConfirmation}>Review changes</button>}
       </>}
-      <button type="button" onClick={() => { setSelectedTransactionId(undefined); setIsSaving(false); }}>Close</button>
+      <button type="button" onClick={() => { setSelectedTransactionId(undefined); setIsSaving(false); setError(undefined); }}>Cancel</button>
     </section>}
   </main>;
 }
