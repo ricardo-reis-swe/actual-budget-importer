@@ -14,6 +14,8 @@ export interface ApplicationConfiguration {
     serverUrl: URL;
   };
   port: number;
+  maximumPdfSizeBytes: number;
+  extractionTimeoutMs: number;
 }
 
 export class ConfigurationError extends Error {
@@ -59,6 +61,13 @@ function port(value: string | undefined): number {
   return parsed;
 }
 
+function positiveNumber(value: string | undefined, name: string, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new ConfigurationError(`${name} must be a positive integer.`);
+  return parsed;
+}
+
 export function loadConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
 ): ApplicationConfiguration {
@@ -86,5 +95,7 @@ export function loadConfiguration(
       ? { paperless: { apiToken: paperlessToken, serverUrl: url(paperlessUrl, 'PAPERLESS_URL') } }
       : {}),
     port: port(optional(environment, 'APP_PORT')),
+    maximumPdfSizeBytes: positiveNumber(environment.MAX_PDF_SIZE_BYTES, 'MAX_PDF_SIZE_BYTES', 100 * 1024 * 1024),
+    extractionTimeoutMs: positiveNumber(environment.EXTRACTION_TIMEOUT_MS, 'EXTRACTION_TIMEOUT_MS', 5 * 60 * 1000),
   };
 }

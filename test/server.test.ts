@@ -16,7 +16,7 @@ function multipart(fields: Record<string, string>, pdf: Buffer): { contentType: 
     `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
   ));
   parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.pdf"\r\nContent-Type: application/pdf\r\n\r\n`));
-  parts.push(pdf, Buffer.from(`\r\n--${boundary}--\r\n`));
+  parts.push(Buffer.from(pdf), Buffer.from(`\r\n--${boundary}--\r\n`));
   return { contentType: `multipart/form-data; boundary=${boundary}`, payload: Buffer.concat(parts) };
 }
 
@@ -193,7 +193,7 @@ describe('server baseline', () => {
     const statementId = first.json().statementId;
     await new Promise((resolve) => setImmediate(resolve));
     const transaction = await database.db.insertInto('statement_transactions').values({ statement_id: statementId, position: 1, date: '01-01-2026', description: 'Synthetic', amount_cents: 100, excluded: 0, stable_import_id: 'second-import-id' }).execute();
-    expect(Number(transaction.numInsertedOrUpdatedRows)).toBe(1);
+    expect(transaction).toHaveLength(1);
     const unconfirmed = multipart({ parserId: 'new' }, pdf);
     const rejected = await app.inject({ method: 'POST', url: `/api/statements/${statementId}/parser`, headers: { 'content-type': unconfirmed.contentType }, payload: unconfirmed.payload });
     expect(rejected.statusCode).toBe(400);

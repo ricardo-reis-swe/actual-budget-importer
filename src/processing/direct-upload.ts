@@ -45,6 +45,7 @@ export class DirectUploadProcessor {
     private readonly maximumPdfSizeBytes = defaultMaximumPdfSizeBytes,
     private readonly now: () => Date = () => new Date(),
     private readonly categorizationRules?: CategorizationRuleMatcher,
+    private readonly extractionTimeoutMs = 5 * 60 * 1000,
   ) {
     this.parsers = new Map(parsers.map((parser) => [parser.id, parser]));
   }
@@ -153,7 +154,10 @@ export class DirectUploadProcessor {
         .executeTakeFirst();
       if (Number(claimed.numUpdatedRows) !== 1) return;
 
-      const transactions = await parser.parse(pdf);
+      const transactions = await Promise.race([
+        parser.parse(pdf),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out.')), this.extractionTimeoutMs)),
+      ]);
       const categorizedTransactions = await Promise.all(transactions.map(async (row) => ({
         ...row,
         categoryId: await this.categorizationRules?.match(row.description) ?? null,

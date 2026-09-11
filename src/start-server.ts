@@ -24,7 +24,7 @@ const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
 await database.migrate();
 const parsers = [activoBankParser, wizinkParser] as const;
-const directUploads = new DirectUploadProcessor(database.db, parsers);
+const directUploads = new DirectUploadProcessor(database.db, parsers, configuration.maximumPdfSizeBytes, undefined, undefined, configuration.extractionTimeoutMs);
 const paperlessProcessor = configuration.paperless
   ? new PaperlessStatementProcessor(database.db, new PaperlessClient(configuration.paperless), parsers)
   : undefined;
