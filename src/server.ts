@@ -34,6 +34,14 @@ export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
 }
 
+export interface PaperlessStatementControls {
+  mappings(): Promise<{ correspondentId: number; parserId: string }[]>;
+  setMapping(correspondentId: number, parserId: string): Promise<void>;
+  selectParser(statementId: number, parserId: string): Promise<void>;
+  retry(statementId: number): Promise<void>;
+  synchronize(statementId: number): Promise<void>;
+}
+
 export interface DatabaseHealth {
   checkHealth(): Promise<void> | void;
 }
@@ -51,6 +59,7 @@ export interface ServerOptions {
   categorySource?: ActualCategorySource;
   categorizationRules?: CategorizationRules;
   paperlessLifecycle?: PaperlessStatementLifecycle;
+  paperlessControls?: PaperlessStatementControls;
   publisher?: StatementPublisher;
   parsers?: readonly Pick<BankParser, 'id' | 'name'>[];
   statements?: StatementManagement;
@@ -248,6 +257,52 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   }
 
+  if (options.paperlessControls) {
+    const controls = options.paperlessControls;
+    app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/paperless/retry', async (request, reply) => {
+      try {
+        const statementId = parseId(request.params.statementId);
+        await controls.retry(statementId);
+        return reply.code(202).send({ statementId, status: 'queued' });
+      } catch (error) {
+        return paperlessControlError(reply, error);
+      }
+    });
+    app.get('/api/paperless/mappings', async () => ({ mappings: await controls.mappings() }));
+    app.put<{ Body: unknown }>('/api/paperless/mappings', async (request, reply) => {
+      const value = request.body;
+      if (!isRecord(value) || !Number.isSafeInteger(value.correspondentId) || (value.correspondentId as number) < 1
+        || typeof value.parserId !== 'string' || !value.parserId.trim()) {
+        return reply.code(400).send({ message: 'Provide a correspondent ID and parser ID.' });
+      }
+      try {
+        await controls.setMapping(value.correspondentId as number, value.parserId.trim());
+        return { mappings: await controls.mappings() };
+      } catch (error) {
+        return paperlessControlError(reply, error);
+      }
+    });
+    app.post<{ Params: { statementId: string }; Body: unknown }>('/api/statements/:statementId/paperless/parser', async (request, reply) => {
+      if (!isRecord(request.body) || typeof request.body.parserId !== 'string' || !request.body.parserId.trim()) {
+        return reply.code(400).send({ message: 'Provide a parser ID.' });
+      }
+      try {
+        await controls.selectParser(parseId(request.params.statementId), request.body.parserId.trim());
+        return reply.code(202).send({ statementId: parseId(request.params.statementId), status: 'processing' });
+      } catch (error) {
+        return paperlessControlError(reply, error);
+      }
+    });
+    app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/paperless/synchronize', async (request, reply) => {
+      try {
+        await controls.synchronize(parseId(request.params.statementId));
+        return reply.code(204).send();
+      } catch (error) {
+        return paperlessControlError(reply, error);
+      }
+    });
+  }
+
   if (options.directUploads) {
     if (options.parsers) {
       app.get('/api/parsers', async () => ({ parsers: options.parsers }));
@@ -372,6 +427,18 @@ function directUploadError(reply: { code(statusCode: number): { send(payload: { 
                 ? 'Only statements with failed extraction can be retried.'
                 : 'This operation is available only for direct uploads.';
   return reply.code(400).send({ message });
+}
+
+function paperlessControlError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
+  const code = error instanceof Error ? error.message : '';
+  const message = code === 'STATEMENT_NOT_FOUND' ? 'Statement not found.'
+    : code === 'STATEMENT_READ_ONLY' ? 'Published statements cannot be changed.'
+      : code === 'STATEMENT_NOT_PAPERLESS' ? 'This statement is not associated with Paperless-ngx.'
+        : code === 'STATEMENT_NOT_RETRYABLE' ? 'Only statements with failed extraction can be retried.'
+          : code === 'INVALID_PARSER' ? 'Select an available parser.'
+            : error instanceof Error && error.message.startsWith('The statement') ? error.message
+              : 'The Paperless-ngx operation could not be completed.';
+  return reply.code(code === 'STATEMENT_NOT_FOUND' ? 404 : 400).send({ message });
 }
 
 function parseId(value: string): number {
