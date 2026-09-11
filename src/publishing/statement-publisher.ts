@@ -156,12 +156,15 @@ export class StatementPublisher {
     if (!['ready for review', 'publish failed'].includes(statement.status)) {
       throw new StatementPublicationError('STATEMENT_NOT_READY');
     }
-    await this.database
+    const updated = await this.database
       .updateTable('statements')
       .set({ status: 'publishing', updated_at: this.now().toISOString() })
       .where('id', '=', statementId)
       .where('status', 'in', ['ready for review', 'publish failed'])
       .execute();
+    if (Number(updated[0]?.numUpdatedRows ?? 0) !== 1) {
+      throw new StatementPublicationError('STATEMENT_BUSY');
+    }
   }
 }
 

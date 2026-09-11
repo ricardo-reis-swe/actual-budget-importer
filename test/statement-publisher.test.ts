@@ -127,4 +127,32 @@ describe('statement publishing', () => {
       .resolves.toMatchObject({ status: 'publish failed', error_message: expect.stringContaining('publishing failed') });
     await database.close();
   });
+
+  it('does not allow two publisher instances to claim the same statement', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    let releaseImport!: () => void;
+    const importStarted = new Promise<void>((resolve) => {
+      releaseImport = resolve;
+    });
+    const actualBudget = {
+      importTransactions: vi.fn(async () => {
+        releaseImport();
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }),
+      findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1299, date: '2026-01-02', imported_id: 'statement-1-transaction-1' }]),
+      synchronize: vi.fn().mockResolvedValue(undefined),
+      updateTransaction: vi.fn().mockResolvedValue(undefined),
+    };
+    const first = new StatementPublisher(database.db, actualBudget);
+    const second = new StatementPublisher(database.db, actualBudget);
+
+    const firstPublish = first.publish(statement.id);
+    await importStarted;
+    await expect(second.publish(statement.id)).rejects.toMatchObject({ code: 'STATEMENT_BUSY' });
+    await firstPublish;
+
+    expect(actualBudget.importTransactions).toHaveBeenCalledOnce();
+    await database.close();
+  });
 });
