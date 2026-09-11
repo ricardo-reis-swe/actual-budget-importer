@@ -17,6 +17,11 @@ main { width: min(1100px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0 5r
 .eyebrow { color: #4967d8 !important; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 button { border: 0; border-radius: .6rem; background: #4967d8; color: white; padding: .7rem 1rem; font-weight: 700; }
 button:disabled { cursor: wait; opacity: .6; }
+.button-link { border-radius: .6rem; background: #4967d8; color: white; padding: .7rem 1rem; font-weight: 700; text-decoration: none; }
+.rules-list { display: grid; gap: .75rem; padding-left: 2rem; }
+.rules-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #e2e8f0; border-radius: .7rem; background: white; padding: .85rem 1rem; }
+.rule-actions { display: flex; gap: .35rem; }
+.rule-actions button { padding: .45rem .65rem; font-size: .8rem; }
 
 section { margin: 1.5rem 0; }
 section h2 { color: #27364f; font-size: 1.15rem; }

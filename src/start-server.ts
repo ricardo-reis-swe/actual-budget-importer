@@ -8,6 +8,7 @@ import { ActualBudgetClient } from './publishing/actual-budget-client.js';
 import { StatementPublisher } from './publishing/statement-publisher.js';
 import { CategoryCatalog } from './categories/category-catalog.js';
 import { CategoryCreation } from './categories/category-creation.js';
+import { CategorizationRules } from './rules/categorization-rules.js';
 import { DirectUploadProcessor } from './processing/direct-upload.js';
 import { PaperlessClient } from './paperless/paperless-client.js';
 import { PaperlessStatementProcessor } from './processing/paperless-statement-processor.js';
@@ -46,6 +47,7 @@ const app = buildServer({
   ...(paperlessProcessor ? { paperlessControls: paperlessProcessor } : {}),
   categoryCatalog,
   categoryCreation: new CategoryCreation(actualBudget),
+  categorizationRules: new CategorizationRules(database.db),
   categorySource: actualBudget,
   parsers,
   publisher,

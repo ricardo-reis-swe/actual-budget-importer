@@ -145,7 +145,7 @@ export function StatementDashboard() {
 
   return <main>
     <header className="dashboard-header">
-      <div><p className="eyebrow">Statement workspace</p><h1>{messages.dashboard.title}</h1><p>Review, categorize, and publish your imported statements.</p></div>
+      <div><p className="eyebrow">Statement workspace</p><h1>{messages.dashboard.title}</h1><p>Review, categorize, and publish your imported statements.</p></div><a className="button-link" href="?rules">Manage rules</a>
       <button type="button" onClick={loadStatements} disabled={isRefreshing}>{isRefreshing ? 'Refreshing…' : 'Refresh'}</button>
     </header>
     <UploadForm />
