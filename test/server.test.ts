@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { buildServer, type ApplicationLogger } from '../src/server.js';
 import { StatementManagement } from '../src/statements/statement-management.js';
 import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
+import { CategoryCreation } from '../src/categories/category-creation.js';
 import type { BankParser } from '../src/parsers/bank-parser.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
@@ -48,6 +49,29 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it('creates categories only with confirmation and returns the Actual Budget category ID', async () => {
+    const createCategory = vi.fn().mockResolvedValue({ id: 'actual-category-1', name: 'Groceries' });
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      categoryCreation: new CategoryCreation({ createCategory }),
+    });
+
+    const unconfirmed = await app.inject({
+      method: 'POST', url: '/api/categories', payload: { confirmed: false, groupId: 'group-1', name: 'Groceries' },
+    });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(unconfirmed.json()).toEqual({ message: 'Category creation requires confirmation.' });
+    expect(createCategory).not.toHaveBeenCalled();
+
+    const created = await app.inject({
+      method: 'POST', url: '/api/categories', payload: { confirmed: true, groupId: 'group-1', name: 'Groceries' },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toEqual({ id: 'actual-category-1', name: 'Groceries' });
+    expect(createCategory).toHaveBeenCalledWith('group-1', 'Groceries');
+    await app.close();
+  });
+
   it('queues a direct PDF upload and returns existing statements for duplicate content', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();

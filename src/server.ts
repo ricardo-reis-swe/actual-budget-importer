@@ -15,6 +15,10 @@ import {
   DirectUploadError,
   DirectUploadProcessor,
 } from './processing/direct-upload.js';
+import {
+  CategoryCreation,
+  CategoryCreationError,
+} from './categories/category-creation.js';
 
 export interface DatabaseHealth {
   checkHealth(): Promise<void> | void;
@@ -28,6 +32,7 @@ export interface ServerOptions {
   database: DatabaseHealth;
   logger?: ApplicationLogger;
   directUploads?: DirectUploadProcessor;
+  categoryCreation?: CategoryCreation;
   statements?: StatementManagement;
 }
 
@@ -101,6 +106,27 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         return deleted ? reply.code(204).send() : reply.code(404).send({ message: 'Statement not found.' });
       } catch (error) {
         return statementManagementError(reply, error);
+      }
+    });
+  }
+
+  if (options.categoryCreation) {
+    const categoryCreation = options.categoryCreation;
+
+    app.post<{ Body: unknown }>('/api/categories', async (request, reply) => {
+      try {
+        const category = await categoryCreation.create(validateCategoryCreation(request.body));
+        return reply.code(201).send(category);
+      } catch (error) {
+        if (error instanceof CategoryCreationError) {
+          const message = error.code === 'CATEGORY_CREATION_NOT_CONFIRMED'
+            ? 'Category creation requires confirmation.'
+            : error.code === 'INVALID_CATEGORY_GROUP'
+              ? 'Select an existing category group.'
+              : 'Provide a category name.';
+          return reply.code(400).send({ message });
+        }
+        throw error;
       }
     });
   }
@@ -263,6 +289,16 @@ function validateReviewUpdate(value: unknown): ReviewUpdate {
     update.reviewedDescription = value.reviewedDescription.trim();
   }
   return update;
+}
+
+function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId: string; name: string } {
+  if (!isRecord(value)
+    || typeof value.confirmed !== 'boolean'
+    || typeof value.groupId !== 'string'
+    || typeof value.name !== 'string') {
+    throw new CategoryCreationError('INVALID_CATEGORY_NAME');
+  }
+  return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
 }
 
 function statementManagementError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
