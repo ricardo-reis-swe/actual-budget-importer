@@ -1,0 +1,25 @@
+services:
+  actual-budget-importer:
+    build: .
+    image: actual-budget-importer:latest
+    env_file: .env
+    environment:
+      APP_DATA_DIRECTORY: /data
+      APP_PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - actual-budget-importer-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  actual-budget-importer-data:
