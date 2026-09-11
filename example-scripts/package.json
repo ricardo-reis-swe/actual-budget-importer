@@ -1,0 +1,17 @@
+{
+  "name": "pdf-table-extract",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "wizink": "node extract-table.mjs --min-cols=2 --money-cols=4 --force-sign=\"4:negative\" --keep-cols=0,2,4 --skip-rows=3 --exclude-pattern=\"^1\\.229\" --header=\"Date,Description,Amount\"",
+    "ativo": "node extract-table.mjs --skip-rows=29 --merge-cols=2-8 --exclude-pattern=\"Banco ActivoBank|Capital Social|A TRANSPORTAR\" --money-cols=3,4 --sign-from-balance=\"3,4\" --min-cols=2 --keep-cols=0,2,3 --header=\"Date,Description,Amount\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38"
+  }
+}
