@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 import { buildServer, type ApplicationLogger } from '../src/server.js';
 import { StatementManagement } from '../src/statements/statement-management.js';
+import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
+import type { BankParser } from '../src/parsers/bank-parser.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
 async function createStatementServer() {
@@ -36,6 +38,26 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it('queues a direct PDF upload and returns existing statements for duplicate content', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const parser: BankParser = { id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
+    const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [parser]) });
+    const boundary = 'synthetic-boundary';
+    const payload = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="parserId"\r\n\r\nsynthetic\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.pdf"\r\nContent-Type: application/pdf\r\n\r\n`),
+      Buffer.from('%PDF-synthetic'),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const first = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    expect(first.statusCode).toBe(202);
+    expect(first.json()).toMatchObject({ statementId: expect.any(Number), status: 'queued' });
+    const duplicate = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json().statementId).toBe(first.json().statementId);
+    await app.close();
+    await database.close();
+  });
   it('reports a generic healthy status after checking the database', async () => {
     const checkHealth = vi.fn();
     const app = buildServer({ database: { checkHealth } });
