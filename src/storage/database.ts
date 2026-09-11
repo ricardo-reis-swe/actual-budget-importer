@@ -4,12 +4,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 
-interface DatabaseSchema {
-  application_settings: {
-    key: string;
-    value: string;
-  };
-}
+import { type DatabaseSchema, runMigrations } from './migrations.js';
 
 export class ApplicationDatabase {
   readonly db: Kysely<DatabaseSchema>;
@@ -25,12 +20,7 @@ export class ApplicationDatabase {
   }
 
   async migrate(): Promise<void> {
-    await this.db.schema
-      .createTable('application_settings')
-      .ifNotExists()
-      .addColumn('key', 'text', (column) => column.primaryKey())
-      .addColumn('value', 'text', (column) => column.notNull())
-      .execute();
+    await runMigrations(this.db);
   }
 
   async checkHealth(): Promise<void> {
