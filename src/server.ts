@@ -23,6 +23,7 @@ import {
   CategorizationRuleError,
   CategorizationRules,
 } from './rules/categorization-rules.js';
+import type { BankParser } from './parsers/bank-parser.js';
 
 export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
@@ -43,6 +44,7 @@ export interface ServerOptions {
   categoryCreation?: CategoryCreation;
   categorizationRules?: CategorizationRules;
   paperlessLifecycle?: PaperlessStatementLifecycle;
+  parsers?: readonly Pick<BankParser, 'id' | 'name'>[];
   statements?: StatementManagement;
 }
 
@@ -207,6 +209,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   }
 
   if (options.directUploads) {
+    if (options.parsers) {
+      app.get('/api/parsers', async () => ({ parsers: options.parsers }));
+    }
     app.post<{ Body: Buffer }>('/api/statements/upload', async (request, reply) => {
       const upload = parseMultipartUpload(request.headers['content-type'], request.body);
       if (!upload) return reply.code(400).send({ message: 'Provide one PDF file and a parser ID.' });

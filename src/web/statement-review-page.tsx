@@ -13,6 +13,7 @@ interface StatementTransaction {
 }
 
 interface StatementDetail {
+  errorMessage: string | null;
   id: number;
   originalFilename: string | null;
   status: string;
@@ -128,6 +129,7 @@ export function StatementReviewPage() {
 
   return <main>
     <h1>{statement.originalFilename ?? `Statement ${statement.id}`}</h1>
+    {statement.errorMessage && <p role="alert">{statement.errorMessage}</p>}
     {readOnly && <p role="status">This statement has been published and is read-only.</p>}
     <table>
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>

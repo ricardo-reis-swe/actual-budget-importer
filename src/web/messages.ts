@@ -1,4 +1,13 @@
 export const messages = {
+  upload: {
+    chooseFile: 'Choose a PDF statement',
+    chooseParser: 'Select a bank parser',
+    error: 'The PDF could not be uploaded.',
+    fileRequired: 'Select a PDF statement.',
+    parserRequired: 'Select a bank parser.',
+    submit: 'Upload statement',
+    title: 'Upload a PDF statement',
+  },
   dashboard: {
     emptyPublished: 'No published statements yet.',
     emptyReview: 'No statements are waiting for review.',

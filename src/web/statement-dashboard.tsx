@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 
 import { messages } from './messages.js';
 
@@ -12,6 +13,11 @@ interface StatementSummary {
   paperlessDocumentTitle: string | null;
   status: string;
   transactionCount: number;
+}
+
+interface ParserOption {
+  id: string;
+  name: string;
 }
 
 const attentionStatuses = new Set(['awaiting parser selection', 'extraction failed', 'publish failed']);
@@ -43,6 +49,67 @@ function StatementList({ statements }: { statements: StatementSummary[] }) {
   </ul>;
 }
 
+function UploadForm() {
+  const [parsers, setParsers] = useState<ParserOption[]>();
+  const [file, setFile] = useState<File>();
+  const [parserId, setParserId] = useState('');
+  const [error, setError] = useState<string>();
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    void fetch('/api/parsers')
+      .then(async (response) => {
+        if (!response.ok) throw new Error(messages.upload.error);
+        return response.json() as Promise<{ parsers: ParserOption[] }>;
+      })
+      .then((loaded) => setParsers(loaded.parsers))
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : messages.upload.error));
+  }, []);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!file) {
+      setError(messages.upload.fileRequired);
+      return;
+    }
+    if (!parserId) {
+      setError(messages.upload.parserRequired);
+      return;
+    }
+    setError(undefined);
+    setIsUploading(true);
+    const form = new FormData();
+    form.append('parserId', parserId);
+    form.append('file', file);
+    void fetch('/api/statements/upload', { method: 'POST', body: form })
+      .then(async (response) => {
+        const result = await response.json() as { message?: string; statementId?: number };
+        if (!response.ok || !result.statementId) throw new Error(result.message ?? messages.upload.error);
+        window.location.href = `?statementId=${encodeURIComponent(result.statementId)}`;
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : messages.upload.error);
+        setIsUploading(false);
+      });
+  };
+
+  return <section aria-labelledby="upload-heading">
+    <h2 id="upload-heading">{messages.upload.title}</h2>
+    <form onSubmit={submit}>
+      <label>{messages.upload.chooseFile} <input type="file" accept="application/pdf,.pdf" onChange={(event) => {
+        setFile(event.target.files?.[0]);
+        setError(undefined);
+      }} disabled={isUploading} /></label>
+      <label>{messages.upload.chooseParser} <select value={parserId} onChange={(event) => { setParserId(event.target.value); setError(undefined); }} disabled={!parsers || isUploading} required>
+        <option value="">{messages.upload.chooseParser}</option>
+        {parsers?.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}</option>)}
+      </select></label>
+      {error && <p role="alert">{error}</p>}
+      <button type="submit" disabled={!parsers || isUploading}>{isUploading ? 'Uploading…' : messages.upload.submit}</button>
+    </form>
+  </section>;
+}
+
 export function StatementDashboard() {
   const [statements, setStatements] = useState<StatementSummary[]>();
   const [error, setError] = useState<string>();
@@ -71,6 +138,7 @@ export function StatementDashboard() {
 
   return <main>
     <h1>{messages.dashboard.title}</h1>
+    <UploadForm />
     <p>{messages.dashboard.needsAttention}: {grouped.attention.length}</p>
     {grouped.attention.length > 0 && <section aria-labelledby="attention-heading">
       <h2 id="attention-heading">{messages.dashboard.needsAttention}</h2>
