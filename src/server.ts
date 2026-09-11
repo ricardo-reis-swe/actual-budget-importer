@@ -20,6 +20,10 @@ import {
   CategoryCreationError,
 } from './categories/category-creation.js';
 
+export interface PaperlessStatementLifecycle {
+  acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
+}
+
 export interface DatabaseHealth {
   checkHealth(): Promise<void> | void;
 }
@@ -33,6 +37,7 @@ export interface ServerOptions {
   logger?: ApplicationLogger;
   directUploads?: DirectUploadProcessor;
   categoryCreation?: CategoryCreation;
+  paperlessLifecycle?: PaperlessStatementLifecycle;
   statements?: StatementManagement;
 }
 
@@ -131,6 +136,31 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   }
 
+  if (options.paperlessLifecycle) {
+    const paperlessLifecycle = options.paperlessLifecycle;
+
+    app.post<{ Body: unknown }>('/api/webhooks/paperless', async (request, reply) => {
+      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+        return reply.code(415).send({ message: 'Use application/json for Paperless-ngx webhooks.' });
+      }
+      const documentId = documentIdFrom(request.body);
+      if (!documentId) {
+        return reply.code(400).send({ message: 'Provide a positive integer document_id.' });
+      }
+      const statement = await paperlessLifecycle.acceptPaperlessDocument(documentId);
+      return reply.code(202).send({ statementId: statement.id, status: statement.status });
+    });
+
+    app.post<{ Body: unknown }>('/api/statements/paperless', async (request, reply) => {
+      const documentId = documentIdFrom(request.body);
+      if (!documentId) {
+        return reply.code(400).send({ message: 'Provide a positive integer documentId.' });
+      }
+      const statement = await paperlessLifecycle.acceptPaperlessDocument(documentId);
+      return reply.code(202).send({ statementId: statement.id, status: statement.status });
+    });
+  }
+
   if (options.directUploads) {
     app.post<{ Body: Buffer }>('/api/statements/upload', async (request, reply) => {
       const upload = parseMultipartUpload(request.headers['content-type'], request.body);
@@ -174,6 +204,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   }
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error.statusCode === 415) {
+      return reply.code(415).send({ message: 'Unsupported content type.' });
+    }
     const failure = logFailure(logger, error, 'synchronization');
     return reply.code(500).send(toUserFailure(failure));
   });
@@ -257,6 +290,14 @@ function parseId(value: string): number {
     throw new StatementManagementError('EMPTY_REVIEW_UPDATE');
   }
   return parsed;
+}
+
+function documentIdFrom(value: unknown): number | undefined {
+  if (!isRecord(value)) return undefined;
+  const documentId = value.document_id ?? value.documentId;
+  return typeof documentId === 'number' && Number.isSafeInteger(documentId) && documentId > 0
+    ? documentId
+    : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

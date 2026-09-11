@@ -49,6 +49,70 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it('accepts configured Paperless webhooks and returns the durable statement state', async () => {
+    const acceptPaperlessDocument = vi.fn().mockResolvedValue({ id: 42, status: 'queued' });
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      paperlessLifecycle: { acceptPaperlessDocument },
+    });
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/paperless',
+      headers: { 'content-type': 'application/json' },
+      payload: { document_id: 23 },
+    });
+
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toEqual({ statementId: 42, status: 'queued' });
+    expect(acceptPaperlessDocument).toHaveBeenCalledWith(23);
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/paperless',
+      headers: { 'content-type': 'application/json' },
+      payload: { document_id: 0 },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const unsupported = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/paperless',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: 'document_id=23',
+    });
+    expect(unsupported.statusCode).toBe(415);
+    await app.close();
+  });
+
+  it('manually retrieves a Paperless document through the same duplicate-safe lifecycle', async () => {
+    const acceptPaperlessDocument = vi.fn().mockResolvedValue({ id: 42, status: 'processing' });
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      paperlessLifecycle: { acceptPaperlessDocument },
+    });
+
+    const accepted = await app.inject({
+      method: 'POST', url: '/api/statements/paperless', payload: { documentId: 23 },
+    });
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toEqual({ statementId: 42, status: 'processing' });
+    expect(acceptPaperlessDocument).toHaveBeenCalledWith(23);
+
+    const invalid = await app.inject({
+      method: 'POST', url: '/api/statements/paperless', payload: { documentId: '23' },
+    });
+    expect(invalid.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('does not expose Paperless routes without the configured integration', async () => {
+    const app = buildServer({ database: { checkHealth: () => undefined } });
+    const response = await app.inject({ method: 'POST', url: '/api/webhooks/paperless', payload: { document_id: 23 } });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
   it('creates categories only with confirmation and returns the Actual Budget category ID', async () => {
     const createCategory = vi.fn().mockResolvedValue({ id: 'actual-category-1', name: 'Groceries' });
     const app = buildServer({
