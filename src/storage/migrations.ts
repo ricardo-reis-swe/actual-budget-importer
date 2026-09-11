@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { type Generated, Kysely } from 'kysely';
 
 export interface DatabaseSchema {
   application_settings: {
@@ -9,7 +9,7 @@ export interface DatabaseSchema {
     category_id: string;
     created_at: string;
     description_contains: string;
-    id: number;
+    id: Generated<number>;
   };
   paperless_parser_mappings: {
     correspondent_id: number;
@@ -29,7 +29,7 @@ export interface DatabaseSchema {
     date: string;
     description: string;
     excluded: number;
-    id: number;
+    id: Generated<number>;
     reviewed_amount_cents: number | null;
     reviewed_date: string | null;
     reviewed_description: string | null;
@@ -42,7 +42,7 @@ export interface DatabaseSchema {
     created_at: string;
     diagnostic_id: string | null;
     error_message: string | null;
-    id: number;
+    id: Generated<number>;
     original_filename: string | null;
     paperless_correspondent_id: number | null;
     paperless_correspondent_name: string | null;

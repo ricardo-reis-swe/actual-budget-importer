@@ -27,7 +27,7 @@ export interface UserFailure {
 export function createSanitizedFailure(
   _cause: unknown,
   stage: ProcessingStage,
-  diagnosticId = randomUUID(),
+  diagnosticId: string = randomUUID(),
 ): SanitizedFailure {
   return {
     diagnosticId,

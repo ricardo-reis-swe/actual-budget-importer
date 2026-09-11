@@ -82,9 +82,9 @@ export function loadConfiguration(
       serverUrl: url(required(environment, 'ACTUAL_SERVER_URL'), 'ACTUAL_SERVER_URL'),
     },
     dataDirectory: resolve(optional(environment, 'APP_DATA_DIRECTORY') ?? 'data'),
-    paperless: paperlessUrl && paperlessToken
-      ? { apiToken: paperlessToken, serverUrl: url(paperlessUrl, 'PAPERLESS_URL') }
-      : undefined,
+    ...(paperlessUrl && paperlessToken
+      ? { paperless: { apiToken: paperlessToken, serverUrl: url(paperlessUrl, 'PAPERLESS_URL') } }
+      : {}),
     port: port(optional(environment, 'APP_PORT')),
   };
 }
