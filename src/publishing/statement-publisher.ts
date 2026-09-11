@@ -50,9 +50,10 @@ export class StatementPublisher {
         .where('excluded', '=', 0)
         .orderBy('position')
         .execute();
+      const includedTransactions = transactions.filter((transaction) => transaction.excluded === 0);
 
-      if (transactions.length > 0) {
-        const pending = transactions.map((transaction) => ({
+      if (includedTransactions.length > 0) {
+        const pending = includedTransactions.map((transaction) => ({
           amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
           category: transaction.actual_category_id,
           cleared: true,
@@ -70,7 +71,7 @@ export class StatementPublisher {
           .filter((transaction) => transaction.imported_id)
           .map((transaction) => [transaction.imported_id!, transaction]));
 
-        for (const [index, transaction] of transactions.entries()) {
+        for (const [index, transaction] of includedTransactions.entries()) {
           const actual = byImportId.get(transaction.stable_import_id);
           if (!actual) throw new Error('Actual Budget did not reconcile an imported transaction.');
           const reviewed = pending[index]!;

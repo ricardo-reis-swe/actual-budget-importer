@@ -89,6 +89,30 @@ describe('statement publishing', () => {
     await database.close();
   });
 
+  it('verifies only included transactions when exclusions are present', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    await database.db.insertInto('statement_transactions').values({
+      amount_cents: -500,
+      date: '02-01-2026',
+      description: 'Excluded transaction',
+      excluded: 1,
+      position: 1,
+      stable_import_id: 'statement-1-transaction-2',
+      statement_id: statement.id,
+    }).execute();
+    const actualBudget = {
+      importTransactions: vi.fn().mockResolvedValue(undefined),
+      findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1299, date: '2026-01-02', imported_id: 'statement-1-transaction-1' }]),
+      synchronize: vi.fn().mockResolvedValue(undefined),
+      updateTransaction: vi.fn().mockResolvedValue(undefined),
+    };
+    await new StatementPublisher(database.db, actualBudget).publish(statement.id);
+    expect(actualBudget.importTransactions).toHaveBeenCalledWith([expect.objectContaining({ imported_id: 'statement-1-transaction-1' })]);
+    expect(actualBudget.updateTransaction).toHaveBeenCalledOnce();
+    await database.close();
+  });
+
   it('marks interrupted publishing as a retryable publish failure after restart', async () => {
     const database = await createDatabase();
     const statement = await readyStatement(database);

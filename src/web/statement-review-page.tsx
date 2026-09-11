@@ -76,6 +76,7 @@ export function StatementReviewPage() {
   const [error, setError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
     const statementId = new URLSearchParams(window.location.search).get('statementId');
@@ -103,6 +104,7 @@ export function StatementReviewPage() {
     [selectedTransactionId, statement],
   );
   const readOnly = statement?.status === 'published';
+  const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed';
   const categories = categoryGroups.flatMap((group) => group.categories);
 
   if (error) return <main><p role="alert">{error}</p></main>;
@@ -147,10 +149,27 @@ export function StatementReviewPage() {
     });
   };
 
+  const publish = () => {
+    if (!statement || !canPublish) return;
+    setIsPublishing(true);
+    setError(undefined);
+    void fetch(`/api/statements/${statement.id}/publish`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error((await response.json() as { message?: string }).message ?? 'The statement could not be published.');
+        setStatement((current) => current && { ...current, status: 'published' });
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'The statement could not be published.');
+        setStatement((current) => current && { ...current, status: 'publish failed' });
+      })
+      .finally(() => setIsPublishing(false));
+  };
+
   return <main>
     <h1>{statement.originalFilename ?? `Statement ${statement.id}`}</h1>
     {statement.errorMessage && <p role="alert">{statement.errorMessage}</p>}
     {readOnly && <p role="status">This statement has been published and is read-only.</p>}
+    {canPublish && <button type="button" onClick={publish} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}
     <table>
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>
       <tbody>{statement.transactions.map((transaction) => {
