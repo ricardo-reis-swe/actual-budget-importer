@@ -19,6 +19,10 @@ import {
   CategoryCreation,
   CategoryCreationError,
 } from './categories/category-creation.js';
+import {
+  CategorizationRuleError,
+  CategorizationRules,
+} from './rules/categorization-rules.js';
 
 export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
@@ -37,6 +41,7 @@ export interface ServerOptions {
   logger?: ApplicationLogger;
   directUploads?: DirectUploadProcessor;
   categoryCreation?: CategoryCreation;
+  categorizationRules?: CategorizationRules;
   paperlessLifecycle?: PaperlessStatementLifecycle;
   statements?: StatementManagement;
 }
@@ -132,6 +137,46 @@ export function buildServer(options: ServerOptions): FastifyInstance {
           return reply.code(400).send({ message });
         }
         throw error;
+      }
+    });
+  }
+
+  if (options.categorizationRules) {
+    const categorizationRules = options.categorizationRules;
+
+    app.get('/api/categorization-rules', async () => ({ rules: await categorizationRules.list() }));
+
+    app.post<{ Body: unknown }>('/api/categorization-rules', async (request, reply) => {
+      try {
+        return reply.code(201).send(await categorizationRules.create(validateCategorizationRule(request.body)));
+      } catch (error) {
+        return categorizationRuleError(reply, error);
+      }
+    });
+
+    app.patch<{ Body: unknown; Params: { ruleId: string } }>('/api/categorization-rules/:ruleId', async (request, reply) => {
+      try {
+        return categorizationRules.update(parseId(request.params.ruleId), validateCategorizationRule(request.body));
+      } catch (error) {
+        return categorizationRuleError(reply, error);
+      }
+    });
+
+    app.delete<{ Params: { ruleId: string } }>('/api/categorization-rules/:ruleId', async (request, reply) => {
+      try {
+        await categorizationRules.delete(parseId(request.params.ruleId));
+        return reply.code(204).send();
+      } catch (error) {
+        return categorizationRuleError(reply, error);
+      }
+    });
+
+    app.put<{ Body: unknown }>('/api/categorization-rules/order', async (request, reply) => {
+      try {
+        await categorizationRules.reorder(validateRuleOrder(request.body));
+        return reply.code(204).send();
+      } catch (error) {
+        return categorizationRuleError(reply, error);
       }
     });
   }
@@ -340,6 +385,32 @@ function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId
     throw new CategoryCreationError('INVALID_CATEGORY_NAME');
   }
   return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
+}
+
+function validateCategorizationRule(value: unknown): { categoryId: string; descriptionContains: string } {
+  if (!isRecord(value) || typeof value.categoryId !== 'string' || typeof value.descriptionContains !== 'string') {
+    throw new CategorizationRuleError('INVALID_MATCH_TEXT');
+  }
+  return { categoryId: value.categoryId, descriptionContains: value.descriptionContains };
+}
+
+function validateRuleOrder(value: unknown): number[] {
+  if (!isRecord(value) || !Array.isArray(value.ruleIds) || !value.ruleIds.every((id) => Number.isSafeInteger(id) && id > 0)) {
+    throw new CategorizationRuleError('INVALID_RULE_ORDER');
+  }
+  return value.ruleIds;
+}
+
+function categorizationRuleError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
+  if (!(error instanceof CategorizationRuleError)) throw error;
+  const message = error.code === 'RULE_NOT_FOUND'
+    ? 'Categorization rule not found.'
+    : error.code === 'INVALID_CATEGORY'
+      ? 'Select a valid category.'
+      : error.code === 'INVALID_RULE_ORDER'
+        ? 'Provide every saved rule once in the requested order.'
+        : 'Provide matching text that contains at least one non-whitespace character.';
+  return reply.code(error.code === 'RULE_NOT_FOUND' ? 404 : 400).send({ message });
 }
 
 function statementManagementError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {

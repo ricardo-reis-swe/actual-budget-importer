@@ -4,6 +4,7 @@ import { type Kysely } from 'kysely';
 
 import { createSanitizedFailure, toUserFailure } from '../diagnostics/failure.js';
 import { type BankParser } from '../parsers/bank-parser.js';
+import { type CategorizationRuleMatcher } from '../rules/categorization-rules.js';
 import { type DatabaseSchema } from '../storage/migrations.js';
 
 export const defaultMaximumPdfSizeBytes = 100 * 1024 * 1024;
@@ -43,6 +44,7 @@ export class DirectUploadProcessor {
     parsers: readonly BankParser[],
     private readonly maximumPdfSizeBytes = defaultMaximumPdfSizeBytes,
     private readonly now: () => Date = () => new Date(),
+    private readonly categorizationRules?: CategorizationRuleMatcher,
   ) {
     this.parsers = new Map(parsers.map((parser) => [parser.id, parser]));
   }
@@ -152,12 +154,17 @@ export class DirectUploadProcessor {
       if (Number(claimed.numUpdatedRows) !== 1) return;
 
       const transactions = await parser.parse(pdf);
+      const categorizedTransactions = await Promise.all(transactions.map(async (row) => ({
+        ...row,
+        categoryId: await this.categorizationRules?.match(row.description) ?? null,
+      })));
       await this.database.transaction().execute(async (transaction) => {
         const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
           .where('id', '=', statementId).executeTakeFirst();
         if (current?.status !== 'processing' || current.parser_id !== parser.id) return;
-        if (transactions.length > 0) {
-          await transaction.insertInto('statement_transactions').values(transactions.map((row) => ({
+        if (categorizedTransactions.length > 0) {
+          await transaction.insertInto('statement_transactions').values(categorizedTransactions.map((row) => ({
+            actual_category_id: row.categoryId,
             statement_id: statementId,
             position: row.position,
             date: row.date,

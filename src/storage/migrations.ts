@@ -10,6 +10,7 @@ export interface DatabaseSchema {
     created_at: string;
     description_contains: string;
     id: Generated<number>;
+    position: number;
   };
   paperless_parser_mappings: {
     correspondent_id: number;
@@ -132,6 +133,15 @@ const migrations: Migration[] = [
           column.primaryKey().references('statement_transactions.id').onDelete('cascade'))
         .addColumn('actual_transaction_id', 'text')
         .addColumn('published_at', 'text')
+        .execute();
+    },
+  },
+  {
+    name: '002_categorization_rule_order',
+    async up(database) {
+      await database.schema
+        .alterTable('categorization_rules')
+        .addColumn('position', 'integer', (column) => column.notNull().defaultTo(0))
         .execute();
     },
   },
