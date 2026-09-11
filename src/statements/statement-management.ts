@@ -4,15 +4,20 @@ import { type DatabaseSchema } from '../storage/migrations.js';
 
 export interface StatementSummary {
   createdAt: string;
+  dateRange: { end: string; start: string } | null;
   id: number;
   originalFilename: string | null;
   parserId: string | null;
+  paperlessCorrespondentName: string | null;
+  paperlessDocumentDate: string | null;
+  paperlessDocumentTitle: string | null;
   status: string;
   transactionCount: number;
   updatedAt: string;
 }
 
-export interface StatementDetail extends Omit<StatementSummary, 'transactionCount'> {
+export interface StatementDetail extends Omit<StatementSummary,
+  'dateRange' | 'paperlessCorrespondentName' | 'paperlessDocumentDate' | 'paperlessDocumentTitle' | 'transactionCount'> {
   diagnosticId: string | null;
   errorMessage: string | null;
   paperless: {
@@ -60,12 +65,30 @@ export class StatementManagement {
       .groupBy('statement_id')
       .execute();
     const counts = new Map(transactionCounts.map((row) => [row.statement_id, Number(row.count)]));
+    const transactionDates = await this.database
+      .selectFrom('statement_transactions')
+      .select(['statement_id', 'date'])
+      .execute();
+    const dateRanges = new Map<number, { end: string; start: string }>();
+    for (const transaction of transactionDates) {
+      const current = dateRanges.get(transaction.statement_id);
+      if (!current) {
+        dateRanges.set(transaction.statement_id, { start: transaction.date, end: transaction.date });
+        continue;
+      }
+      if (sortableDate(transaction.date) < sortableDate(current.start)) current.start = transaction.date;
+      if (sortableDate(transaction.date) > sortableDate(current.end)) current.end = transaction.date;
+    }
 
     return statements.map((statement) => ({
       createdAt: statement.created_at,
+      dateRange: dateRanges.get(statement.id) ?? null,
       id: statement.id,
       originalFilename: statement.original_filename,
       parserId: statement.parser_id,
+      paperlessCorrespondentName: statement.paperless_correspondent_name,
+      paperlessDocumentDate: statement.paperless_document_date,
+      paperlessDocumentTitle: statement.paperless_document_title,
       status: statement.status,
       transactionCount: counts.get(statement.id) ?? 0,
       updatedAt: statement.updated_at,
@@ -188,6 +211,11 @@ export class StatementManagement {
     await this.database.deleteFrom('statements').where('id', '=', statementId).execute();
     return true;
   }
+}
+
+function sortableDate(date: string): string {
+  const [day, month, year] = date.split('-');
+  return day && month && year ? `${year}${month}${day}` : date;
 }
 
 export class StatementManagementError extends Error {

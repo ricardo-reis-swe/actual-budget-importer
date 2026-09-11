@@ -197,7 +197,10 @@ describe('server baseline', () => {
     const list = await app.inject({ method: 'GET', url: '/api/statements' });
     expect(list.statusCode).toBe(200);
     expect(list.json()).toEqual({ statements: [expect.objectContaining({
-      id: statement.id, transactionCount: 1, originalFilename: 'synthetic.pdf',
+      id: statement.id,
+      transactionCount: 1,
+      originalFilename: 'synthetic.pdf',
+      dateRange: { start: '31-12-2025', end: '31-12-2025' },
     })] });
 
     const detail = await app.inject({ method: 'GET', url: `/api/statements/${statement.id}` });
