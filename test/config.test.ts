@@ -29,6 +29,19 @@ describe('application configuration', () => {
       .toThrow('PAPERLESS_URL and PAPERLESS_API_TOKEN must be configured together.');
   });
 
+  it('loads Paperless-ngx settings only when both values are configured', () => {
+    const configuration = loadConfiguration({
+      ...requiredConfiguration,
+      PAPERLESS_API_TOKEN: 'synthetic-token',
+      PAPERLESS_URL: 'https://paperless.example.test',
+    });
+
+    expect(configuration.paperless).toEqual({
+      apiToken: 'synthetic-token',
+      serverUrl: new URL('https://paperless.example.test'),
+    });
+  });
+
   it('validates the listener port and integration URL', () => {
     expect(() => loadConfiguration({ ...requiredConfiguration, APP_PORT: '0' }))
       .toThrow('APP_PORT must be an integer between 1 and 65535.');
