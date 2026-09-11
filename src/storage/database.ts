@@ -13,6 +13,7 @@ export class ApplicationDatabase {
   constructor(dataDirectory: string) {
     mkdirSync(dataDirectory, { recursive: true });
     this.sqlite = new Database(join(dataDirectory, 'actual-budget-importer.sqlite'));
+    this.sqlite.pragma('foreign_keys = ON');
     this.sqlite.pragma('journal_mode = WAL');
     this.db = new Kysely<DatabaseSchema>({
       dialect: new SqliteDialect({ database: this.sqlite }),
