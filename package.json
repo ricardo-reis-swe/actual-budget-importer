@@ -11,11 +11,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "fastify": "^5.6.0",
+    "kysely": "^0.29.5",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
