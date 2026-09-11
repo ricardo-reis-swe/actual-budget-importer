@@ -134,6 +134,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const publisher = options.publisher;
     app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/publish', async (request, reply) => {
       try {
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
         await publisher.publish(parseId(request.params.statementId));
         return reply.code(204).send();
       } catch (error) {

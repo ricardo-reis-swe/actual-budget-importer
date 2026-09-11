@@ -51,8 +51,8 @@ const app = buildServer({
   publisher,
   statements: new StatementManagement(database.db),
 });
+await categoryCatalog.refresh(actualBudget).catch(() => undefined);
 await app.listen({ host: '0.0.0.0', port: configuration.port });
-void categoryCatalog.refresh(actualBudget).catch(() => undefined);
 
 async function close(): Promise<void> {
   await app.close();
