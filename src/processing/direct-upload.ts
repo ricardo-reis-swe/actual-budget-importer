@@ -139,7 +139,7 @@ export class DirectUploadProcessor {
     if (statement.paperless_document_id !== null || statement.content_hash === null || statement.parser_id === null) {
       throw new DirectUploadError('STATEMENT_NOT_DIRECT_UPLOAD');
     }
-    return statement;
+    return { ...statement, content_hash: statement.content_hash, parser_id: statement.parser_id };
   }
 
   private async extract(statementId: number, parser: BankParser, pdf: Uint8Array): Promise<void> {

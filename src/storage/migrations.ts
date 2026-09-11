@@ -1,6 +1,18 @@
 import { type Generated, Kysely } from 'kysely';
 
 export interface DatabaseSchema {
+  actual_category_groups: {
+    id: string;
+    name: string;
+    deleted: number;
+  };
+  actual_categories: {
+    id: string;
+    group_id: string;
+    name: string;
+    hidden: number;
+    deleted: number;
+  };
   application_settings: {
     key: string;
     value: string;
@@ -142,6 +154,28 @@ const migrations: Migration[] = [
       await database.schema
         .alterTable('categorization_rules')
         .addColumn('position', 'integer', (column) => column.notNull().defaultTo(0))
+        .execute();
+    },
+  },
+  {
+    name: '003_actual_category_cache',
+    async up(database) {
+      await database.schema
+        .createTable('actual_category_groups')
+        .ifNotExists()
+        .addColumn('id', 'text', (column) => column.primaryKey())
+        .addColumn('name', 'text', (column) => column.notNull())
+        .addColumn('deleted', 'integer', (column) => column.notNull().defaultTo(0))
+        .execute();
+
+      await database.schema
+        .createTable('actual_categories')
+        .ifNotExists()
+        .addColumn('id', 'text', (column) => column.primaryKey())
+        .addColumn('group_id', 'text', (column) => column.notNull().references('actual_category_groups.id'))
+        .addColumn('name', 'text', (column) => column.notNull())
+        .addColumn('hidden', 'integer', (column) => column.notNull().defaultTo(0))
+        .addColumn('deleted', 'integer', (column) => column.notNull().defaultTo(0))
         .execute();
     },
   },

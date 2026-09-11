@@ -136,7 +136,7 @@ export class PaperlessStatementProcessor {
       .where('id', '=', statementId).executeTakeFirst();
     if (!statement) throw new PaperlessStatementError('STATEMENT_NOT_FOUND');
     if (statement.paperless_document_id === null) throw new PaperlessStatementError('STATEMENT_NOT_PAPERLESS');
-    return statement;
+    return { ...statement, id: statement.id, paperless_document_id: statement.paperless_document_id };
   }
 }
 

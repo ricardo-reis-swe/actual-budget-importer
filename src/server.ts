@@ -23,7 +23,12 @@ import {
   CategorizationRuleError,
   CategorizationRules,
 } from './rules/categorization-rules.js';
+import {
+  StatementPublicationError,
+  StatementPublisher,
+} from './publishing/statement-publisher.js';
 import type { BankParser } from './parsers/bank-parser.js';
+import { CategoryCatalog, type ActualCategorySource } from './categories/category-catalog.js';
 
 export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
@@ -42,8 +47,11 @@ export interface ServerOptions {
   logger?: ApplicationLogger;
   directUploads?: DirectUploadProcessor;
   categoryCreation?: CategoryCreation;
+  categoryCatalog?: CategoryCatalog;
+  categorySource?: ActualCategorySource;
   categorizationRules?: CategorizationRules;
   paperlessLifecycle?: PaperlessStatementLifecycle;
+  publisher?: StatementPublisher;
   parsers?: readonly Pick<BankParser, 'id' | 'name'>[];
   statements?: StatementManagement;
 }
@@ -122,6 +130,26 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   }
 
+  if (options.publisher) {
+    const publisher = options.publisher;
+    app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/publish', async (request, reply) => {
+      try {
+        await publisher.publish(parseId(request.params.statementId));
+        return reply.code(204).send();
+      } catch (error) {
+        if (error instanceof StatementPublicationError) {
+          const message = error.code === 'STATEMENT_NOT_FOUND'
+            ? 'Statement not found.'
+            : error.code === 'STATEMENT_BUSY'
+              ? 'This statement is already publishing.'
+              : 'Only a statement ready for review can be published.';
+          return reply.code(error.code === 'STATEMENT_NOT_FOUND' ? 404 : 400).send({ message });
+        }
+        throw error;
+      }
+    });
+  }
+
   if (options.categoryCreation) {
     const categoryCreation = options.categoryCreation;
 
@@ -140,6 +168,15 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         }
         throw error;
       }
+    });
+  }
+
+  if (options.categoryCatalog) {
+    const categoryCatalog = options.categoryCatalog;
+    app.get('/api/categories', async () => ({ groups: await categoryCatalog.list() }));
+    app.post('/api/categories/refresh', async (_request, reply) => {
+      if (!options.categorySource) return reply.code(503).send({ message: 'Category synchronization is unavailable.' });
+      return { groups: await categoryCatalog.refresh(options.categorySource) };
     });
   }
 
@@ -254,7 +291,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   }
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error.statusCode === 415) {
+    if (error instanceof Error && 'statusCode' in error && error.statusCode === 415) {
       return reply.code(415).send({ message: 'Unsupported content type.' });
     }
     const failure = logFailure(logger, error, 'synchronization');
@@ -311,7 +348,7 @@ function parseMultipartForm(contentType: string | undefined, body: Buffer): { fi
     }
     offset = next + delimiter.length;
   }
-  return { fields, file };
+  return file ? { fields, file } : { fields };
 }
 
 function directUploadError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {

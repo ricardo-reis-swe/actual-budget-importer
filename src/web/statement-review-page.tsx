@@ -28,6 +28,21 @@ interface ReviewDraft {
   excluded: boolean;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  groupId: string;
+  hidden: boolean;
+  deleted: boolean;
+}
+
+interface CategoryGroup {
+  id: string;
+  name: string;
+  deleted: boolean;
+  categories: Category[];
+}
+
 function toDraft(transaction: StatementTransaction): ReviewDraft {
   return {
     actualCategoryId: transaction.actualCategoryId ?? '',
@@ -60,6 +75,7 @@ export function StatementReviewPage() {
   const [selectedTransactionId, setSelectedTransactionId] = useState<number>();
   const [error, setError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
+  const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
 
   useEffect(() => {
     const statementId = new URLSearchParams(window.location.search).get('statementId');
@@ -67,6 +83,9 @@ export function StatementReviewPage() {
       setError('Select a statement to review.');
       return;
     }
+    void fetch('/api/categories')
+      .then(async (response) => response.ok ? response.json() as Promise<{ groups: CategoryGroup[] }> : { groups: [] })
+      .then((loaded) => setCategoryGroups(loaded.groups));
     void fetch(`/api/statements/${encodeURIComponent(statementId)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error('The statement could not be loaded.');
@@ -84,6 +103,7 @@ export function StatementReviewPage() {
     [selectedTransactionId, statement],
   );
   const readOnly = statement?.status === 'published';
+  const categories = categoryGroups.flatMap((group) => group.categories);
 
   if (error) return <main><p role="alert">{error}</p></main>;
   if (!statement) return <main><p>Loading statement…</p></main>;
@@ -137,7 +157,8 @@ export function StatementReviewPage() {
         const draft = drafts[transaction.id]!;
         return <tr key={transaction.id}>
           <td>{draft.date}</td><td>{draft.description}</td><td>{formatCents(Number(draft.amountCents))}</td>
-          <td>{draft.actualCategoryId || 'Uncategorized'}</td><td>{draft.excluded ? 'No' : 'Yes'}</td>
+          <td>{categories.find((category) => category.id === draft.actualCategoryId)?.name ?? (draft.actualCategoryId || 'Uncategorized')}
+            {categories.find((category) => category.id === draft.actualCategoryId)?.deleted && ' (deleted)'}</td><td>{draft.excluded ? 'No' : 'Yes'}</td>
           <td>{!readOnly && <button type="button" onClick={() => { setSelectedTransactionId(transaction.id); setIsSaving(false); }}>Edit</button>}</td>
         </tr>;
       })}</tbody>
@@ -152,7 +173,10 @@ export function StatementReviewPage() {
         <label>Date <input value={drafts[selectedTransaction.id]!.date} onChange={(event) => updateDraft('date', event.target.value)} disabled={readOnly} /></label>
         <label>Description <input value={drafts[selectedTransaction.id]!.description} onChange={(event) => updateDraft('description', event.target.value)} disabled={readOnly} /></label>
         <label>Amount (cents) <input inputMode="numeric" value={drafts[selectedTransaction.id]!.amountCents} onChange={(event) => updateDraft('amountCents', event.target.value)} disabled={readOnly} /></label>
-        <label>Category ID <input value={drafts[selectedTransaction.id]!.actualCategoryId} onChange={(event) => updateDraft('actualCategoryId', event.target.value)} disabled={readOnly} /></label>
+        <label>Category <select value={drafts[selectedTransaction.id]!.actualCategoryId} onChange={(event) => updateDraft('actualCategoryId', event.target.value)} disabled={readOnly}>
+          <option value="">Uncategorized</option>
+          {categoryGroups.map((group) => <optgroup key={group.id} label={group.name}>{group.categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.deleted ? ' (deleted)' : ''}{category.hidden ? ' (hidden)' : ''}</option>)}</optgroup>)}
+        </select></label>
         <label><input type="checkbox" checked={drafts[selectedTransaction.id]!.excluded} onChange={(event) => updateDraft('excluded', event.target.checked)} disabled={readOnly} /> Exclude transaction</label>
         {!readOnly && <button type="button" onClick={requestConfirmation}>Review changes</button>}
       </>}
