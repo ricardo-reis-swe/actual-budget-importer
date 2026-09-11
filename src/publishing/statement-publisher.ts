@@ -53,7 +53,15 @@ export class StatementPublisher {
       const includedTransactions = transactions.filter((transaction) => transaction.excluded === 0);
 
       if (includedTransactions.length > 0) {
-        const pending = includedTransactions.map((transaction) => ({
+        const publicationRecords = await this.database
+          .selectFrom('publication_records')
+          .select(['statement_transaction_id', 'actual_transaction_id'])
+          .where('statement_transaction_id', 'in', includedTransactions.map((transaction) => transaction.id))
+          .execute();
+        const recordsByTransactionId = new Map(publicationRecords.map((record) => [record.statement_transaction_id, record]));
+        const pending = includedTransactions
+          .filter((transaction) => !recordsByTransactionId.has(transaction.id))
+          .map((transaction) => ({
           amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
           category: transaction.actual_category_id,
           cleared: true,
@@ -62,19 +70,33 @@ export class StatementPublisher {
           imported_payee: transaction.description,
           notes: '',
           payee_name: transaction.reviewed_description ?? transaction.description,
-        }));
-        await this.actualBudget.importTransactions(pending);
+          }));
+        if (pending.length > 0) await this.actualBudget.importTransactions(pending);
 
-        const dates = pending.map((transaction) => transaction.date).sort();
+        const reviewedTransactions = includedTransactions.map((transaction) => ({
+          transaction,
+          amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
+          category: transaction.actual_category_id,
+          cleared: true,
+          date: actualDate(transaction.reviewed_date ?? transaction.date),
+          imported_payee: transaction.description,
+          notes: '',
+          payee_name: transaction.reviewed_description ?? transaction.description,
+        }));
+        const dates = reviewedTransactions.map(({ date }) => date).sort();
         const actualTransactions = await this.actualBudget.findTransactions(dates[0]!, dates[dates.length - 1]!);
         const byImportId = new Map(actualTransactions
           .filter((transaction) => transaction.imported_id)
           .map((transaction) => [transaction.imported_id!, transaction]));
 
-        for (const [index, transaction] of includedTransactions.entries()) {
+        for (const reviewed of reviewedTransactions) {
+          const { transaction } = reviewed;
           const actual = byImportId.get(transaction.stable_import_id);
-          if (!actual) throw new Error('Actual Budget did not reconcile an imported transaction.');
-          const reviewed = pending[index]!;
+          if (!actual) {
+            const record = recordsByTransactionId.get(transaction.id);
+            if (record?.actual_transaction_id) throw new Error('A previously published Actual Budget transaction is no longer available.');
+            throw new Error('Actual Budget did not reconcile an imported transaction.');
+          }
           await this.actualBudget.updateTransaction(actual.id, {
             amount: reviewed.amount,
             category: reviewed.category ?? null,
