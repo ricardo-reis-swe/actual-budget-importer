@@ -9,6 +9,16 @@ import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
 import type { BankParser } from '../src/parsers/bank-parser.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
+function multipart(fields: Record<string, string>, pdf: Buffer): { contentType: string; payload: Buffer } {
+  const boundary = 'synthetic-boundary';
+  const parts = Object.entries(fields).map(([name, value]) => Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+  ));
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.pdf"\r\nContent-Type: application/pdf\r\n\r\n`));
+  parts.push(pdf, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { contentType: `multipart/form-data; boundary=${boundary}`, payload: Buffer.concat(parts) };
+}
+
 async function createStatementServer() {
   const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
   await database.migrate();
@@ -55,6 +65,58 @@ describe('server baseline', () => {
     const duplicate = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
     expect(duplicate.statusCode).toBe(200);
     expect(duplicate.json().statementId).toBe(first.json().statementId);
+    await app.close();
+    await database.close();
+  });
+
+  it('retries a failed direct upload only when the original PDF matches', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const parser: BankParser = { id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
+    const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [parser]) });
+    const pdf = Buffer.from('%PDF-synthetic');
+    const uploaded = multipart({ parserId: 'synthetic' }, pdf);
+    const first = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': uploaded.contentType }, payload: uploaded.payload });
+    const statementId = first.json().statementId;
+    await database.db.updateTable('statements').set({ status: 'extraction failed', error_message: 'failed' }).where('id', '=', statementId).execute();
+    const retry = await app.inject({ method: 'POST', url: `/api/statements/${statementId}/retry`, headers: { 'content-type': uploaded.contentType }, payload: uploaded.payload });
+    expect(retry.statusCode).toBe(202);
+    expect(retry.json()).toMatchObject({ statementId, status: 'queued' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(parser.parse).toHaveBeenCalledTimes(2);
+    await database.db.updateTable('statements').set({ status: 'extraction failed' }).where('id', '=', statementId).execute();
+    const changed = multipart({}, Buffer.from('%PDF-different'));
+    const mismatched = await app.inject({ method: 'POST', url: `/api/statements/${statementId}/retry`, headers: { 'content-type': changed.contentType }, payload: changed.payload });
+    expect(mismatched.statusCode).toBe(400);
+    expect(mismatched.json()).toEqual({ message: 'The selected PDF does not match this statement.' });
+    await app.close();
+    await database.close();
+  });
+
+  it('requires confirmation and the original PDF before changing a direct upload parser', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const oldParser: BankParser = { id: 'old', name: 'Old', parse: vi.fn().mockResolvedValue([]) };
+    const newParser: BankParser = { id: 'new', name: 'New', parse: vi.fn().mockResolvedValue([]) };
+    const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [oldParser, newParser]) });
+    const pdf = Buffer.from('%PDF-synthetic');
+    const uploaded = multipart({ parserId: 'old' }, pdf);
+    const first = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': uploaded.contentType }, payload: uploaded.payload });
+    const statementId = first.json().statementId;
+    await new Promise((resolve) => setImmediate(resolve));
+    const transaction = await database.db.insertInto('statement_transactions').values({ statement_id: statementId, position: 1, date: '01-01-2026', description: 'Synthetic', amount_cents: 100, excluded: 0, stable_import_id: 'second-import-id' }).execute();
+    expect(Number(transaction.numInsertedOrUpdatedRows)).toBe(1);
+    const unconfirmed = multipart({ parserId: 'new' }, pdf);
+    const rejected = await app.inject({ method: 'POST', url: `/api/statements/${statementId}/parser`, headers: { 'content-type': unconfirmed.contentType }, payload: unconfirmed.payload });
+    expect(rejected.statusCode).toBe(400);
+    expect(await database.db.selectFrom('statement_transactions').select('id').where('statement_id', '=', statementId).execute()).not.toEqual([]);
+    const confirmed = multipart({ parserId: 'new', confirm: 'true' }, pdf);
+    const changed = await app.inject({ method: 'POST', url: `/api/statements/${statementId}/parser`, headers: { 'content-type': confirmed.contentType }, payload: confirmed.payload });
+    expect(changed.statusCode).toBe(202);
+    await new Promise((resolve) => setImmediate(resolve));
+    const statement = await database.db.selectFrom('statements').select(['parser_id', 'status']).where('id', '=', statementId).executeTakeFirstOrThrow();
+    expect(statement).toMatchObject({ parser_id: 'new', status: 'ready for review' });
+    expect(newParser.parse).toHaveBeenCalledWith(pdf);
     await app.close();
     await database.close();
   });

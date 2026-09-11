@@ -9,7 +9,15 @@ import { type DatabaseSchema } from '../storage/migrations.js';
 export const defaultMaximumPdfSizeBytes = 100 * 1024 * 1024;
 
 export class DirectUploadError extends Error {
-  constructor(readonly code: 'INVALID_PARSER' | 'PDF_TOO_LARGE') {
+  constructor(readonly code:
+    | 'INVALID_PARSER'
+    | 'PDF_CONTENT_CHANGED'
+    | 'PDF_TOO_LARGE'
+    | 'PARSER_CHANGE_REQUIRES_CONFIRMATION'
+    | 'STATEMENT_NOT_DIRECT_UPLOAD'
+    | 'STATEMENT_NOT_FOUND'
+    | 'STATEMENT_NOT_RETRYABLE'
+    | 'STATEMENT_READ_ONLY') {
     super(code);
   }
 }
@@ -40,9 +48,8 @@ export class DirectUploadProcessor {
   }
 
   async upload(upload: DirectUpload): Promise<DirectUploadResult> {
-    const parser = this.parsers.get(upload.parserId);
-    if (!parser) throw new DirectUploadError('INVALID_PARSER');
-    if (upload.pdf.byteLength > this.maximumPdfSizeBytes) throw new DirectUploadError('PDF_TOO_LARGE');
+    const parser = this.requireParser(upload.parserId);
+    this.validatePdfSize(upload.pdf);
 
     const contentHash = createHash('sha256').update(upload.pdf).digest('hex');
     const existing = await this.database
@@ -70,18 +77,85 @@ export class DirectUploadProcessor {
     return { id: statement.id, status: statement.status, duplicate: false };
   }
 
+  async retry(statementId: number, pdf: Uint8Array): Promise<DirectUploadResult> {
+    this.validatePdfSize(pdf);
+    const statement = await this.requireDirectUpload(statementId);
+    if (statement.status !== 'extraction failed') throw new DirectUploadError('STATEMENT_NOT_RETRYABLE');
+    this.requireMatchingPdf(statement.content_hash, pdf);
+    const parser = this.requireParser(statement.parser_id);
+    await this.database.updateTable('statements').set({
+      diagnostic_id: null,
+      error_message: null,
+      status: 'queued',
+      updated_at: this.now().toISOString(),
+    }).where('id', '=', statement.id).execute();
+    queueMicrotask(() => { void this.extract(statement.id, parser, pdf); });
+    return { id: statement.id, status: 'queued', duplicate: false };
+  }
+
+  async changeParser(statementId: number, parserId: string, pdf: Uint8Array, confirmed: boolean): Promise<DirectUploadResult> {
+    if (!confirmed) throw new DirectUploadError('PARSER_CHANGE_REQUIRES_CONFIRMATION');
+    this.validatePdfSize(pdf);
+    const statement = await this.requireDirectUpload(statementId);
+    if (statement.status === 'published') throw new DirectUploadError('STATEMENT_READ_ONLY');
+    this.requireMatchingPdf(statement.content_hash, pdf);
+    const parser = this.requireParser(parserId);
+    await this.database.transaction().execute(async (transaction) => {
+      await transaction.deleteFrom('statement_transactions').where('statement_id', '=', statement.id).execute();
+      await transaction.updateTable('statements').set({
+        diagnostic_id: null,
+        error_message: null,
+        parser_id: parser.id,
+        status: 'queued',
+        updated_at: this.now().toISOString(),
+      }).where('id', '=', statement.id).execute();
+    });
+    queueMicrotask(() => { void this.extract(statement.id, parser, pdf); });
+    return { id: statement.id, status: 'queued', duplicate: false };
+  }
+
+  private requireParser(parserId: string): BankParser {
+    const parser = this.parsers.get(parserId);
+    if (!parser) throw new DirectUploadError('INVALID_PARSER');
+    return parser;
+  }
+
+  private validatePdfSize(pdf: Uint8Array): void {
+    if (pdf.byteLength > this.maximumPdfSizeBytes) throw new DirectUploadError('PDF_TOO_LARGE');
+  }
+
+  private requireMatchingPdf(contentHash: string | null, pdf: Uint8Array): void {
+    const uploadedHash = createHash('sha256').update(pdf).digest('hex');
+    if (contentHash !== uploadedHash) throw new DirectUploadError('PDF_CONTENT_CHANGED');
+  }
+
+  private async requireDirectUpload(statementId: number) {
+    const statement = await this.database.selectFrom('statements').select([
+      'content_hash', 'id', 'paperless_document_id', 'parser_id', 'status',
+    ]).where('id', '=', statementId).executeTakeFirst();
+    if (!statement) throw new DirectUploadError('STATEMENT_NOT_FOUND');
+    if (statement.paperless_document_id !== null || statement.content_hash === null || statement.parser_id === null) {
+      throw new DirectUploadError('STATEMENT_NOT_DIRECT_UPLOAD');
+    }
+    return statement;
+  }
+
   private async extract(statementId: number, parser: BankParser, pdf: Uint8Array): Promise<void> {
     try {
       const claimed = await this.database
         .updateTable('statements')
         .set({ status: 'processing', updated_at: this.now().toISOString() })
         .where('id', '=', statementId)
+        .where('parser_id', '=', parser.id)
         .where('status', '=', 'queued')
         .executeTakeFirst();
       if (Number(claimed.numUpdatedRows) !== 1) return;
 
       const transactions = await parser.parse(pdf);
       await this.database.transaction().execute(async (transaction) => {
+        const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
+          .where('id', '=', statementId).executeTakeFirst();
+        if (current?.status !== 'processing' || current.parser_id !== parser.id) return;
         if (transactions.length > 0) {
           await transaction.insertInto('statement_transactions').values(transactions.map((row) => ({
             statement_id: statementId,
@@ -105,7 +179,7 @@ export class DirectUploadProcessor {
         error_message: toUserFailure(failure).message,
         diagnostic_id: failure.diagnosticId,
         updated_at: this.now().toISOString(),
-      }).where('id', '=', statementId).execute();
+      }).where('id', '=', statementId).where('parser_id', '=', parser.id).where('status', '=', 'processing').execute();
     }
   }
 }

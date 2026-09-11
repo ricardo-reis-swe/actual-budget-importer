@@ -116,12 +116,33 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         const result = await options.directUploads!.upload(upload);
         return reply.code(result.duplicate ? 200 : 202).send({ statementId: result.id, status: result.status });
       } catch (error) {
-        if (error instanceof DirectUploadError) {
-          return reply.code(400).send({ message: error.code === 'INVALID_PARSER'
-            ? 'Select an available parser.'
-            : 'The PDF exceeds the configured size limit.' });
-        }
-        throw error;
+        return directUploadError(reply, error);
+      }
+    });
+
+    app.post<{ Body: Buffer; Params: { statementId: string } }>('/api/statements/:statementId/retry', async (request, reply) => {
+      const pdf = parseMultipartPdf(request.headers['content-type'], request.body);
+      if (!pdf || !pdf.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+        return reply.code(400).send({ message: 'Select the original PDF to retry extraction.' });
+      }
+      try {
+        const result = await options.directUploads!.retry(parseId(request.params.statementId), pdf);
+        return reply.code(202).send({ statementId: result.id, status: result.status });
+      } catch (error) {
+        return directUploadError(reply, error);
+      }
+    });
+
+    app.post<{ Body: Buffer; Params: { statementId: string } }>('/api/statements/:statementId/parser', async (request, reply) => {
+      const change = parseMultipartParserChange(request.headers['content-type'], request.body);
+      if (!change || !change.pdf.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+        return reply.code(400).send({ message: 'Provide a parser, confirmation, and the original PDF.' });
+      }
+      try {
+        const result = await options.directUploads!.changeParser(parseId(request.params.statementId), change.parserId, change.pdf, change.confirmed);
+        return reply.code(202).send({ statementId: result.id, status: result.status });
+      } catch (error) {
+        return directUploadError(reply, error);
       }
     });
   }
@@ -135,6 +156,24 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 }
 
 function parseMultipartUpload(contentType: string | undefined, body: Buffer): { filename: string; parserId: string; pdf: Buffer } | undefined {
+  const parsed = parseMultipartForm(contentType, body);
+  const parserId = parsed?.fields.get('parserId')?.trim();
+  const file = parsed?.file;
+  return file && parserId && file.filename ? { ...file, parserId } : undefined;
+}
+
+function parseMultipartPdf(contentType: string | undefined, body: Buffer): Buffer | undefined {
+  return parseMultipartForm(contentType, body)?.file?.pdf;
+}
+
+function parseMultipartParserChange(contentType: string | undefined, body: Buffer): { confirmed: boolean; parserId: string; pdf: Buffer } | undefined {
+  const parsed = parseMultipartForm(contentType, body);
+  const parserId = parsed?.fields.get('parserId')?.trim();
+  const confirmed = parsed?.fields.get('confirm') === 'true';
+  return parsed?.file && parserId ? { confirmed, parserId, pdf: parsed.file.pdf } : undefined;
+}
+
+function parseMultipartForm(contentType: string | undefined, body: Buffer): { fields: Map<string, string>; file?: { filename: string; pdf: Buffer } } | undefined {
   const boundary = contentType?.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)?.[1]
     ?? contentType?.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i)?.[2];
   if (!boundary) return undefined;
@@ -163,8 +202,27 @@ function parseMultipartUpload(contentType: string | undefined, body: Buffer): { 
     }
     offset = next + delimiter.length;
   }
-  const parserId = fields.get('parserId')?.trim();
-  return file && parserId && file.filename ? { ...file, parserId } : undefined;
+  return { fields, file };
+}
+
+function directUploadError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
+  if (!(error instanceof DirectUploadError)) throw error;
+  const message = error.code === 'INVALID_PARSER'
+    ? 'Select an available parser.'
+    : error.code === 'PDF_TOO_LARGE'
+      ? 'The PDF exceeds the configured size limit.'
+      : error.code === 'PDF_CONTENT_CHANGED'
+        ? 'The selected PDF does not match this statement.'
+        : error.code === 'PARSER_CHANGE_REQUIRES_CONFIRMATION'
+          ? 'Changing the parser requires confirmation because review changes will be deleted.'
+          : error.code === 'STATEMENT_READ_ONLY'
+            ? 'Published statements cannot change parser.'
+            : error.code === 'STATEMENT_NOT_FOUND'
+              ? 'Statement not found.'
+              : error.code === 'STATEMENT_NOT_RETRYABLE'
+                ? 'Only statements with failed extraction can be retried.'
+                : 'This operation is available only for direct uploads.';
+  return reply.code(400).send({ message });
 }
 
 function parseId(value: string): number {
