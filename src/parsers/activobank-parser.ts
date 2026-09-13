@@ -8,7 +8,7 @@ import {
 
 const headerRowCount = 29;
 const excludedRow = /Banco ActivoBank|Capital Social|A TRANSPORTAR/i;
-const transactionDate = /^(\d{2})[/-](\d{2})[/-](\d{4})$/;
+const transactionDate = /^(\d{1,2})[./-](\d{2})[./-](\d{2,4})$/;
 
 /**
  * Parser for the Portuguese ActivoBank account statement layout.
@@ -21,7 +21,8 @@ export const activoBankParser: BankParser = {
   id: 'activobank',
   name: 'ActivoBank',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {
-    const document = await getDocument({ data: pdf }).promise;
+    // pdfjs-dist rejects Node Buffers despite Buffer extending Uint8Array.
+    const document = await getDocument({ data: new Uint8Array(pdf) }).promise;
     try {
       const pages: PositionedText[][] = [];
       for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -54,6 +55,7 @@ export function parseActivoBankRows(
   rows: readonly (readonly string[])[],
 ): readonly ParsedTransaction[] {
   const transactions: ParsedTransaction[] = [];
+  const statementYear = findStatementYear(rows) ?? new Date().getUTCFullYear();
   let previousBalance: number | undefined;
 
   for (const originalRow of rows.slice(headerRowCount)) {
@@ -62,10 +64,19 @@ export function parseActivoBankRows(
     }
 
     const row = mergeDescriptionColumns(originalRow);
-    const date = normalizeDate(row[0]);
-    const description = row[2]?.trim();
-    const unsignedAmount = parseEuroCents(row[3]);
-    const balance = parseEuroCents(row[4]);
+    const date = normalizeDate(row[0], statementYear);
+    const numericIndexes = row.map((value, index) => parseEuroCents(value) !== undefined ? index : -1).filter((index) => index >= 0);
+    const amountIndex = numericIndexes.length >= 2 && row.length > 6 ? numericIndexes.at(-2)! : 3;
+    const balanceIndex = numericIndexes.length >= 2 && row.length > 6 ? numericIndexes.at(-1)! : 4;
+    const description = row.slice(2, amountIndex).filter(Boolean).join(' ').trim();
+    const unsignedAmount = parseEuroCents(row[amountIndex]);
+    const balance = parseEuroCents(row[balanceIndex])
+      ?? (numericIndexes.length === 1 ? parseEuroCents(row[numericIndexes.at(0)!]) : undefined);
+
+    if (/^SALDO INICIAL$/i.test(description) && balance !== undefined) {
+      previousBalance = balance;
+      continue;
+    }
 
     if (!date || !description || unsignedAmount === undefined || balance === undefined) {
       continue;
@@ -98,9 +109,28 @@ function mergeDescriptionColumns(row: readonly string[]): readonly string[] {
   ];
 }
 
-function normalizeDate(value: string | undefined): string | undefined {
-  const match = value?.trim().match(transactionDate);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
+function findStatementYear(rows: readonly (readonly string[])[]): number | undefined {
+  for (const row of rows) {
+    const match = row.join(' ').match(/\b(\d{2})\/\d{2}\/\d{2}\b/);
+    if (match) return 2000 + Number(match[1]);
+  }
+  return undefined;
+}
+
+function normalizeDate(value: string | undefined, statementYear: number): string | undefined {
+  const trimmed = value?.trim();
+  const shortMatch = trimmed?.match(/^(\d{1,2})\.(\d{2})$/);
+  if (shortMatch) {
+    const [, month, day] = shortMatch;
+    if (!month || !day) return undefined;
+    return `${statementYear}-${month.padStart(2, '0')}-${day}`;
+  }
+  const match = trimmed?.match(transactionDate);
+  if (!match) return undefined;
+  const [, day, month, rawYear] = match;
+  if (!day || !month || !rawYear) return undefined;
+  const year = rawYear.length === 2 ? statementYear : Number(rawYear);
+  return rawYear.length === 4 ? `${day}-${month}-${rawYear}` : `${day.padStart(2, '0')}-${month}-${year}`;
 }
 
 function parseEuroCents(value: string | undefined): number | undefined {

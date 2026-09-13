@@ -24,9 +24,10 @@ const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
 await database.migrate();
 const parsers = [activoBankParser, wizinkParser] as const;
-const directUploads = new DirectUploadProcessor(database.db, parsers, configuration.maximumPdfSizeBytes, undefined, undefined, configuration.extractionTimeoutMs);
+const categorizationRules = new CategorizationRules(database.db);
+const directUploads = new DirectUploadProcessor(database.db, parsers, configuration.maximumPdfSizeBytes, undefined, categorizationRules, configuration.extractionTimeoutMs);
 const paperlessProcessor = configuration.paperless
-  ? new PaperlessStatementProcessor(database.db, new PaperlessClient(configuration.paperless), parsers)
+  ? new PaperlessStatementProcessor(database.db, new PaperlessClient(configuration.paperless), parsers, undefined, categorizationRules)
   : undefined;
 const paperlessLifecycle = configuration.paperless
   ? new StatementLifecycle(
@@ -47,7 +48,7 @@ const app = buildServer({
   ...(paperlessProcessor ? { paperlessControls: paperlessProcessor } : {}),
   categoryCatalog,
   categoryCreation: new CategoryCreation(actualBudget),
-  categorizationRules: new CategorizationRules(database.db),
+  categorizationRules,
   categorySource: actualBudget,
   parsers,
   publisher,

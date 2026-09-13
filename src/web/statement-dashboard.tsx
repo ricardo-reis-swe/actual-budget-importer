@@ -35,17 +35,36 @@ function dateRange(statement: StatementSummary): string | undefined {
   return statement.paperlessDocumentDate ?? undefined;
 }
 
-function StatementList({ statements }: { statements: StatementSummary[] }) {
+function StatementList({ statements, canDelete = true, showAttentionIcon = false, onDeleted }: { statements: StatementSummary[]; canDelete?: boolean; showAttentionIcon?: boolean; onDeleted?: () => void }) {
+  const remove = async (statement: StatementSummary) => {
+    if (!window.confirm(`Delete “${sourceName(statement)}”? This cannot be undone.`)) return;
+    const response = await fetch(`/api/statements/${statement.id}`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ confirm: true }),
+    });
+    if (!response.ok) {
+      const result = await response.json() as { message?: string };
+      window.alert(result.message ?? 'The statement could not be removed.');
+      return;
+    }
+    onDeleted?.();
+  };
+
   return <ul className="statement-list">
     {statements.map((statement) => {
       const range = dateRange(statement);
       return <li key={statement.id}>
-        <a className="statement-card" href={`?statementId=${encodeURIComponent(statement.id)}`}>
-          <span className="statement-card-heading">{sourceName(statement)}</span>
+        <div className={`statement-card${showAttentionIcon ? ' statement-card-attention' : ''}`}>
+          <a className="statement-card-link" href={`?statementId=${encodeURIComponent(statement.id)}`}>
+            {showAttentionIcon && <span className="statement-card-icon" aria-label="Needs attention" title="Needs attention">!</span>}
+            <span className="statement-card-heading">{sourceName(statement)}</span>
           <span className="statement-card-meta">{statement.status}{statement.parserId ? ` · ${statement.parserId}` : ''}</span>
           <span className="statement-card-meta">{messages.dashboard.transactionCount(statement.transactionCount)}{range ? ` · ${range}` : ''}</span>
           {statement.paperlessCorrespondentName && <span className="statement-card-meta">Paperless-ngx · {statement.paperlessCorrespondentName}</span>}
-        </a>
+          </a>
+          {canDelete && <button className="statement-card-delete" type="button" aria-label={`Delete ${sourceName(statement)}`} title="Delete statement" onClick={() => void remove(statement)}>🗑</button>}
+        </div>
       </li>;
     })}
   </ul>;
@@ -115,22 +134,18 @@ function UploadForm() {
 export function StatementDashboard() {
   const [statements, setStatements] = useState<StatementSummary[]>();
   const [error, setError] = useState<string>();
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadStatements = () => {
-    setIsRefreshing(true);
     void fetch('/api/statements')
       .then(async (response) => {
         if (!response.ok) throw new Error(messages.dashboard.loadError);
         return response.json() as Promise<{ statements: StatementSummary[] }>;
       })
       .then((loaded) => { setStatements(loaded.statements); setError(undefined); })
-      .catch(() => setError(messages.dashboard.loadError))
-      .finally(() => setIsRefreshing(false));
+      .catch(() => setError(messages.dashboard.loadError));
   };
 
   useEffect(loadStatements, []);
-
   const grouped = useMemo(() => {
     const nonPublished = statements?.filter((statement) => statement.status !== 'published') ?? [];
     return {
@@ -144,10 +159,6 @@ export function StatementDashboard() {
   if (!statements) return <main><p>{messages.dashboard.loading}</p></main>;
 
   return <main>
-    <header className="dashboard-header">
-      <div><p className="eyebrow">Statement workspace</p><h1>{messages.dashboard.title}</h1><p>Review, categorize, and publish your imported statements.</p></div><a className="button-link" href="?rules">Manage rules</a>
-      <button type="button" onClick={loadStatements} disabled={isRefreshing}>{isRefreshing ? 'Refreshing…' : 'Refresh'}</button>
-    </header>
     <UploadForm />
     <section className="dashboard-stats" aria-label="Statement summary">
       <div className="stat-card"><strong>{grouped.attention.length}</strong><span>{messages.dashboard.needsAttention}</span></div>
@@ -156,15 +167,15 @@ export function StatementDashboard() {
     </section>
     {grouped.attention.length > 0 && <section aria-labelledby="attention-heading">
       <h2 id="attention-heading">{messages.dashboard.needsAttention}</h2>
-      <StatementList statements={grouped.attention} />
+      <StatementList statements={grouped.attention} showAttentionIcon onDeleted={loadStatements} />
     </section>}
     <section aria-labelledby="review-heading">
       <h2 id="review-heading">{messages.dashboard.review} ({grouped.review.length})</h2>
-      {grouped.review.length === 0 ? <p>{messages.dashboard.emptyReview}</p> : <StatementList statements={grouped.review} />}
+      {grouped.review.length === 0 ? <p>{messages.dashboard.emptyReview}</p> : <StatementList statements={grouped.review} onDeleted={loadStatements} />}
     </section>
     <section aria-labelledby="published-heading">
       <h2 id="published-heading">{messages.dashboard.published}</h2>
-      {grouped.published.length === 0 ? <p>{messages.dashboard.emptyPublished}</p> : <StatementList statements={grouped.published} />}
+      {grouped.published.length === 0 ? <p>{messages.dashboard.emptyPublished}</p> : <StatementList statements={grouped.published} onDeleted={loadStatements} />}
     </section>
   </main>;
 }

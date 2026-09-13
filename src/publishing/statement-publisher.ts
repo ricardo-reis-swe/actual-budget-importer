@@ -13,12 +13,14 @@ export interface ActualTransaction {
   imported_id?: string | null;
   imported_payee?: string;
   notes?: string;
+  payee?: string | null;
   payee_name?: string;
 }
 
 export interface ActualBudgetPublisher {
   importTransactions(transactions: Omit<ActualTransaction, 'id'>[]): Promise<void>;
   findTransactions(startDate: string, endDate: string): Promise<ActualTransaction[]>;
+  resolvePayee(name: string): Promise<string>;
   synchronize(): Promise<void>;
   updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void>;
 }
@@ -97,6 +99,7 @@ export class StatementPublisher {
             if (record?.actual_transaction_id) throw new Error('A previously published Actual Budget transaction is no longer available.');
             throw new Error('Actual Budget did not reconcile an imported transaction.');
           }
+          const payee = await this.actualBudget.resolvePayee(reviewed.payee_name);
           await this.actualBudget.updateTransaction(actual.id, {
             amount: reviewed.amount,
             category: reviewed.category ?? null,
@@ -104,7 +107,7 @@ export class StatementPublisher {
             date: reviewed.date,
             imported_payee: reviewed.imported_payee,
             notes: '',
-            payee_name: reviewed.payee_name,
+            payee,
           });
           await this.database
             .insertInto('publication_records')
@@ -191,7 +194,10 @@ export class StatementPublisher {
 }
 
 function actualDate(value: string): string {
-  const [day, month, year] = value.split('-');
-  if (!day || !month || !year) throw new Error('Invalid transaction date.');
-  return `${year}-${month}-${day}`;
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (isoDate) return value;
+
+  const dayFirstDate = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
+  if (!dayFirstDate) throw new Error('Invalid transaction date.');
+  return `${dayFirstDate[3]}-${dayFirstDate[2]}-${dayFirstDate[1]}`;
 }

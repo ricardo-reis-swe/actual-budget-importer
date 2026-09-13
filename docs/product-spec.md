@@ -311,6 +311,8 @@ people can use it.
   that option.
 - Do not overwrite categories the user already assigned to
   other transactions.
+- Let the user apply the saved rules to the current unpublished
+  statement without creating a new rule.
 - Apply saved rules automatically to new statements from
   Paperless-ngx and direct PDF uploads.
 - Reopening a duplicate statement must preserve its existing
@@ -368,8 +370,10 @@ people can use it.
 - Let users create, edit, delete, and reorder rules.
 - Show each rule's description text, assigned category,
   and position in the matching order.
-- Apply every rule to statements from every bank.
-- Do not limit rules to a specific bank or parser.
+- Apply rules to statements from every bank by default.
+- Let the user optionally scope a rule to one parser.
+- Apply a parser-scoped rule only when the statement used that
+  parser.
 - Changes to rules do not alter published statements.
 
 ## Categories and rules ownership

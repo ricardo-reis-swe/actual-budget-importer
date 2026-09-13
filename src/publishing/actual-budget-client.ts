@@ -1,3 +1,6 @@
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import * as actual from '@actual-app/api';
 
 import { type ApplicationConfiguration } from '../config.js';
@@ -31,6 +34,13 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     return this.withBudget(() => actual.getTransactions(this.configuration.actualBudget.accountId, startDate, endDate) as Promise<ActualTransaction[]>);
   }
 
+  async resolvePayee(name: string): Promise<string> {
+    return this.withBudget(async () => {
+      const existing = (await actual.getPayees()).find((payee) => payee.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+      return existing?.id ?? actual.createPayee({ name });
+    });
+  }
+
   async synchronize(): Promise<void> {
     await this.withBudget(() => actual.sync());
   }
@@ -41,21 +51,23 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     categories: readonly { id: string; name: string; hidden?: boolean }[];
   }[]> {
     return this.withBudget(async () => {
-      const api = actual as unknown as { getCategoriesGrouped: () => Promise<unknown> };
-      const groups = await api.getCategoriesGrouped();
-      if (!Array.isArray(groups)) throw new Error('Actual Budget returned an invalid category list.');
-      return groups as {
-        id: string;
-        name: string;
-        categories: readonly { id: string; name: string; hidden?: boolean }[];
-      }[];
+      const groups = await actual.getCategoryGroups();
+      return groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        categories: (group.categories ?? []).map((category) => ({
+          id: category.id,
+          name: category.name,
+          ...(category.hidden === undefined ? {} : { hidden: category.hidden }),
+        })),
+      }));
     });
   }
 
   async createCategory(groupId: string, name: string): Promise<{ id: string; name: string }> {
     return this.withBudget(async () => {
-      const api = actual as unknown as { createCategory: (category: { cat_group: string; name: string }) => Promise<{ id: string; name: string }> };
-      return api.createCategory({ cat_group: groupId, name });
+      const id = await actual.createCategory({ group_id: groupId, name });
+      return { id, name };
     });
   }
 
@@ -69,8 +81,10 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     this.queue = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
+      const dataDirectory = join(this.configuration.dataDirectory, 'actual-cache');
+      await mkdir(dataDirectory, { recursive: true });
       await actual.init({
-        dataDir: `${this.configuration.dataDirectory}/actual-cache`,
+        dataDir: dataDirectory,
         password: this.configuration.actualBudget.password,
         serverURL: this.configuration.actualBudget.serverUrl.toString(),
       });

@@ -44,6 +44,16 @@ describe('categorization rules', () => {
     await database.close();
   });
 
+  it('uses a parser-scoped rule only for its selected parser', async () => {
+    const { database, rules } = await createRules();
+    await rules.create({ categoryId: 'coffee', descriptionContains: 'coffee', parserId: 'activobank' });
+    await rules.create({ categoryId: 'general', descriptionContains: 'coffee' });
+
+    expect(await rules.match('Coffee shop', 'activobank')).toBe('coffee');
+    expect(await rules.match('Coffee shop', 'wizink')).toBe('general');
+    await database.close();
+  });
+
   it('validates matching text and keeps the category and text editable', async () => {
     const { database, rules } = await createRules();
     await expect(rules.create({ categoryId: 'groceries', descriptionContains: '   ' }))

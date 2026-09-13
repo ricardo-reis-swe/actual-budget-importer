@@ -1,6 +1,7 @@
 import { type Kysely } from 'kysely';
 
 import { type DatabaseSchema } from '../storage/migrations.js';
+import { type CategorizationRuleMatcher } from '../rules/categorization-rules.js';
 
 export interface StatementSummary {
   createdAt: string;
@@ -196,6 +197,46 @@ export class StatementManagement {
     };
   }
 
+  async applyRules(statementId: number, rules: CategorizationRuleMatcher): Promise<{ appliedCount: number; statement: StatementDetail } | undefined> {
+    const statement = await this.database
+      .selectFrom('statements')
+      .select(['parser_id', 'status'])
+      .where('id', '=', statementId)
+      .executeTakeFirst();
+    if (!statement) return undefined;
+    if (statement.status === 'published' || statement.status === 'publishing') {
+      throw new StatementManagementError('STATEMENT_READ_ONLY');
+    }
+
+    const transactions = await this.database
+      .selectFrom('statement_transactions')
+      .select(['actual_category_id', 'description', 'id', 'reviewed_description'])
+      .where('statement_id', '=', statementId)
+      .execute();
+    const matches = await Promise.all(transactions
+      .filter((item) => item.actual_category_id === null)
+      .map(async (item) => ({ id: item.id, categoryId: await rules.match(item.reviewed_description ?? item.description, statement.parser_id) })));
+    const matchedTransactions = matches.filter((item): item is { categoryId: string; id: number } => item.categoryId !== null);
+    let applied = false;
+    await this.database.transaction().execute(async (transaction) => {
+      for (const item of matchedTransactions) {
+        await transaction.updateTable('statement_transactions')
+          .set({ actual_category_id: item.categoryId })
+          .where('id', '=', item.id)
+          .execute();
+        applied = true;
+      }
+      if (applied) {
+        await transaction.updateTable('statements')
+          .set({ updated_at: this.now().toISOString() })
+          .where('id', '=', statementId)
+          .execute();
+      }
+    });
+    const updatedStatement = await this.get(statementId);
+    return updatedStatement ? { appliedCount: matchedTransactions.length, statement: updatedStatement } : undefined;
+  }
+
   async delete(statementId: number): Promise<boolean> {
     const statement = await this.database
       .selectFrom('statements')
@@ -214,8 +255,11 @@ export class StatementManagement {
 }
 
 function sortableDate(date: string): string {
-  const [day, month, year] = date.split('-');
-  return day && month && year ? `${year}${month}${day}` : date;
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (isoDate) return `${isoDate[1]}${isoDate[2]}${isoDate[3]}`;
+
+  const dayFirstDate = /^(\d{2})-(\d{2})-(\d{4})$/.exec(date);
+  return dayFirstDate ? `${dayFirstDate[3]}${dayFirstDate[2]}${dayFirstDate[1]}` : date;
 }
 
 export class StatementManagementError extends Error {

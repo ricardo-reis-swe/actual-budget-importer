@@ -7,11 +7,12 @@ export interface CategorizationRule {
   createdAt: string;
   descriptionContains: string;
   id: number;
+  parserId: string | null;
   position: number;
 }
 
 export interface CategorizationRuleMatcher {
-  match(description: string): Promise<string | null>;
+  match(description: string, parserId?: string | null): Promise<string | null>;
 }
 
 export class CategorizationRuleError extends Error {
@@ -37,7 +38,7 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     return rules.map(toRule);
   }
 
-  async create(input: { categoryId: string; descriptionContains: string }): Promise<CategorizationRule> {
+  async create(input: { categoryId: string; descriptionContains: string; parserId?: string | null }): Promise<CategorizationRule> {
     const categoryId = requireCategory(input.categoryId);
     const descriptionContains = requireMatchText(input.descriptionContains);
     const lastRule = await this.database
@@ -52,6 +53,7 @@ export class CategorizationRules implements CategorizationRuleMatcher {
         category_id: categoryId,
         created_at: this.now().toISOString(),
         description_contains: descriptionContains,
+        parser_id: normalizeParser(input.parserId),
         position: (lastRule?.position ?? -1) + 1,
       })
       .returningAll()
@@ -59,12 +61,12 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     return toRule(rule);
   }
 
-  async update(ruleId: number, input: { categoryId: string; descriptionContains: string }): Promise<CategorizationRule> {
+  async update(ruleId: number, input: { categoryId: string; descriptionContains: string; parserId?: string | null }): Promise<CategorizationRule> {
     const categoryId = requireCategory(input.categoryId);
     const descriptionContains = requireMatchText(input.descriptionContains);
     const rule = await this.database
       .updateTable('categorization_rules')
-      .set({ category_id: categoryId, description_contains: descriptionContains })
+      .set({ category_id: categoryId, description_contains: descriptionContains, parser_id: normalizeParser(input.parserId) })
       .where('id', '=', ruleId)
       .returningAll()
       .executeTakeFirst();
@@ -93,15 +95,21 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     });
   }
 
-  async match(description: string): Promise<string | null> {
+  async match(description: string, parserId?: string | null): Promise<string | null> {
     const normalizedDescription = description.toLowerCase();
     for (const rule of await this.list()) {
-      if (normalizedDescription.includes(rule.descriptionContains.toLowerCase())) {
+      if ((rule.parserId === null || rule.parserId === parserId)
+        && normalizedDescription.includes(rule.descriptionContains.toLowerCase())) {
         return rule.categoryId;
       }
     }
     return null;
   }
+}
+
+function normalizeParser(parserId: string | null | undefined): string | null {
+  const normalized = parserId?.trim();
+  return normalized || null;
 }
 
 function requireCategory(categoryId: string): string {
@@ -121,6 +129,7 @@ function toRule(rule: {
   created_at: string;
   description_contains: string;
   id: number;
+  parser_id: string | null;
   position: number;
 }): CategorizationRule {
   return {
@@ -128,6 +137,7 @@ function toRule(rule: {
     createdAt: rule.created_at,
     descriptionContains: rule.description_contains,
     id: rule.id,
+    parserId: rule.parser_id,
     position: rule.position,
   };
 }

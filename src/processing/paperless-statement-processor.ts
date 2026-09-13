@@ -6,6 +6,7 @@ import { createSanitizedFailure, toUserFailure } from '../diagnostics/failure.js
 import { type PaperlessClient, type PaperlessDocument } from '../paperless/paperless-client.js';
 import { type BankParser } from '../parsers/bank-parser.js';
 import { type DatabaseSchema } from '../storage/migrations.js';
+import { type CategorizationRuleMatcher } from '../rules/categorization-rules.js';
 
 export class PaperlessStatementError extends Error {
   constructor(readonly code: 'INVALID_PARSER' | 'STATEMENT_NOT_FOUND' | 'STATEMENT_NOT_PAPERLESS' | 'STATEMENT_NOT_RETRYABLE' | 'STATEMENT_READ_ONLY') {
@@ -21,6 +22,7 @@ export class PaperlessStatementProcessor {
     private readonly paperless: PaperlessClient,
     parsers: readonly BankParser[],
     private readonly now: () => Date = () => new Date(),
+    private readonly categorizationRules?: CategorizationRuleMatcher,
   ) {
     this.parsers = new Map(parsers.map((parser) => [parser.id, parser]));
   }
@@ -99,11 +101,15 @@ export class PaperlessStatementProcessor {
       const rows = await parser.parse(pdf);
       if (rows.length === 0) throw new Error('No transactions extracted.');
       const contentHash = createHash('sha256').update(pdf).digest('hex');
+      const categorizedRows = await Promise.all(rows.map(async (row) => ({
+        ...row,
+        categoryId: await this.categorizationRules?.match(row.description, parser.id) ?? null,
+      })));
       await this.database.transaction().execute(async (transaction) => {
         await transaction.deleteFrom('statement_transactions').where('statement_id', '=', statementId).execute();
-        await transaction.insertInto('statement_transactions').values(rows.map((row) => ({
+        await transaction.insertInto('statement_transactions').values(categorizedRows.map((row) => ({
           statement_id: statementId, position: row.position, date: row.date, description: row.description,
-          amount_cents: row.amountCents, excluded: 0, stable_import_id: randomUUID(),
+          amount_cents: row.amountCents, actual_category_id: row.categoryId, excluded: 0, stable_import_id: randomUUID(),
         }))).execute();
         await transaction.updateTable('statements').set({ content_hash: contentHash, parser_id: parser.id,
           status: 'ready for review', error_message: null, diagnostic_id: null, updated_at: this.now().toISOString() })

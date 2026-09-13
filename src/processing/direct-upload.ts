@@ -160,7 +160,7 @@ export class DirectUploadProcessor {
       ]);
       const categorizedTransactions = await Promise.all(transactions.map(async (row) => ({
         ...row,
-        categoryId: await this.categorizationRules?.match(row.description) ?? null,
+        categoryId: await this.categorizationRules?.match(row.description, parser.id) ?? null,
       })));
       await this.database.transaction().execute(async (transaction) => {
         const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])

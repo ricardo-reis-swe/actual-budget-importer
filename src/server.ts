@@ -99,6 +99,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
   });
 
+  app.get('/api/actual/status', async (_request, reply) => {
+    if (!options.categorySource) return reply.code(503).send({ connected: false });
+    try {
+      await options.categorySource.getCategoriesGrouped();
+      return { connected: true };
+    } catch (cause) {
+      logFailure(logger, cause, 'synchronization');
+      return reply.code(503).send({ connected: false });
+    }
+  });
+
   if (options.statements) {
     const statements = options.statements;
 
@@ -125,6 +136,20 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         }
       },
     );
+
+    if (options.categorizationRules) {
+      app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/apply-rules', async (request, reply) => {
+        try {
+          const statement = await statements.applyRules(
+            parseId(request.params.statementId),
+            options.categorizationRules!,
+          );
+          return statement ?? reply.code(404).send({ message: 'Statement not found.' });
+        } catch (error) {
+          return statementManagementError(reply, error);
+        }
+      });
+    }
 
     app.delete<{ Body: unknown; Params: { statementId: string } }>('/api/statements/:statementId', async (request, reply) => {
       if (!isRecord(request.body) || request.body.confirm !== true) {
@@ -499,11 +524,12 @@ function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId
   return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
 }
 
-function validateCategorizationRule(value: unknown): { categoryId: string; descriptionContains: string } {
-  if (!isRecord(value) || typeof value.categoryId !== 'string' || typeof value.descriptionContains !== 'string') {
+function validateCategorizationRule(value: unknown): { categoryId: string; descriptionContains: string; parserId: string | null } {
+  if (!isRecord(value) || typeof value.categoryId !== 'string' || typeof value.descriptionContains !== 'string'
+    || ('parserId' in value && value.parserId !== null && typeof value.parserId !== 'string')) {
     throw new CategorizationRuleError('INVALID_MATCH_TEXT');
   }
-  return { categoryId: value.categoryId, descriptionContains: value.descriptionContains };
+  return { categoryId: value.categoryId, descriptionContains: value.descriptionContains, parserId: value.parserId as string | null ?? null };
 }
 
 function validateRuleOrder(value: unknown): number[] {

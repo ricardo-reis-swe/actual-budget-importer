@@ -6,7 +6,7 @@ import {
   type PositionedText,
 } from './generic-table-extractor.js';
 
-const transactionDate = /^(\d{2})[/-](\d{2})[/-](\d{4})$/;
+const transactionDate = /^(\d{2})[/-](\d{2})[/-](\d{2,4})$/;
 const nonTransactionRow = /^(?:data|date|descri[cç][aã]o|montante|movimentos?|total|p[aá]gina)\b/i;
 const creditDescription = /\b(?:cr[eé]dito|devolu[cç][aã]o|estorno|reembolso|pagamento)\b/i;
 
@@ -15,7 +15,8 @@ export const wizinkParser: BankParser = {
   id: 'wizink',
   name: 'WiZink',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {
-    const document = await getDocument({ data: pdf }).promise;
+    // pdfjs-dist rejects Node Buffers despite Buffer extending Uint8Array.
+    const document = await getDocument({ data: new Uint8Array(pdf) }).promise;
     try {
       const pages: PositionedText[][] = [];
       for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -83,7 +84,11 @@ function findAmountIndex(cells: readonly string[], start: number): number {
 
 function normalizeDate(value: string): string | undefined {
   const match = value.match(transactionDate);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
+  if (!match) return undefined;
+  const [, day, month, rawYear] = match;
+  if (!day || !month || !rawYear) return undefined;
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+  return rawYear.length === 4 ? `${day}-${month}-${year}` : `${year}-${month}-${day}`;
 }
 
 function parseAmountCents(value: string): number | undefined {

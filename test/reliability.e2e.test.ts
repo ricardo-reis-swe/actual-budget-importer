@@ -58,6 +58,7 @@ class MockActualBudget implements ActualBudgetPublisher {
   }
 
   async findTransactions() { return [...this.imported.values()]; }
+  async resolvePayee(name: string) { return `payee-${name}`; }
   async synchronize() {}
   async updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>) {
     const existing = [...this.imported.values()].find((value) => value.id === id);

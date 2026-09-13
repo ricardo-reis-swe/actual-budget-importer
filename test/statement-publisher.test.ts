@@ -48,6 +48,7 @@ describe('statement publishing', () => {
     const actualBudget = {
       importTransactions: vi.fn().mockResolvedValue(undefined),
       findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1300, date: '2026-01-03', imported_id: 'statement-1-transaction-1' }]),
+      resolvePayee: vi.fn().mockResolvedValue('payee-1'),
       synchronize: vi.fn().mockResolvedValue(undefined),
       updateTransaction: vi.fn().mockResolvedValue(undefined),
     };
@@ -63,7 +64,7 @@ describe('statement publishing', () => {
       imported_payee: 'Synthetic Grocer',
       payee_name: 'Reviewed grocer',
     })]);
-    expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-1', expect.objectContaining({ category: 'category-1' }));
+    expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-1', expect.objectContaining({ category: 'category-1', payee: 'payee-1' }));
     expect(actualBudget.synchronize).toHaveBeenCalledOnce();
     await expect(database.db.selectFrom('statements').select('status').where('id', '=', statement.id).executeTakeFirstOrThrow())
       .resolves.toEqual({ status: 'published' });
@@ -77,7 +78,7 @@ describe('statement publishing', () => {
     const statement = await readyStatement(database);
     const publisher = new StatementPublisher(database.db, {
       importTransactions: vi.fn().mockRejectedValue(new Error('password=private')),
-      findTransactions: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
+      findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
     });
 
     await expect(publisher.publish(statement.id)).rejects.toThrow('password=private');
@@ -104,6 +105,7 @@ describe('statement publishing', () => {
     const actualBudget = {
       importTransactions: vi.fn().mockResolvedValue(undefined),
       findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1299, date: '2026-01-02', imported_id: 'statement-1-transaction-1' }]),
+      resolvePayee: vi.fn().mockResolvedValue('payee-1'),
       synchronize: vi.fn().mockResolvedValue(undefined),
       updateTransaction: vi.fn().mockResolvedValue(undefined),
     };
@@ -113,12 +115,33 @@ describe('statement publishing', () => {
     await database.close();
   });
 
+  it('preserves ISO review dates when sending transactions to Actual Budget', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    await database.db.updateTable('statement_transactions').set({
+      reviewed_date: '2026-08-16',
+    }).where('id', '=', statement.transactionId).execute();
+    const actualBudget = {
+      importTransactions: vi.fn().mockResolvedValue(undefined),
+      findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1299, date: '2026-08-16', imported_id: 'statement-1-transaction-1' }]),
+      resolvePayee: vi.fn().mockResolvedValue('payee-1'),
+      synchronize: vi.fn().mockResolvedValue(undefined),
+      updateTransaction: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new StatementPublisher(database.db, actualBudget).publish(statement.id);
+
+    expect(actualBudget.importTransactions).toHaveBeenCalledWith([expect.objectContaining({ date: '2026-08-16' })]);
+    expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-1', expect.objectContaining({ date: '2026-08-16' }));
+    await database.close();
+  });
+
   it('marks interrupted publishing as a retryable publish failure after restart', async () => {
     const database = await createDatabase();
     const statement = await readyStatement(database);
     await database.db.updateTable('statements').set({ status: 'publishing' }).where('id', '=', statement.id).execute();
     const publisher = new StatementPublisher(database.db, {
-      importTransactions: vi.fn(), findTransactions: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
+      importTransactions: vi.fn(), findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
     });
 
     await publisher.recoverInterruptedPublishing();
@@ -141,6 +164,7 @@ describe('statement publishing', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }),
       findTransactions: vi.fn().mockResolvedValue([{ id: 'actual-1', amount: -1299, date: '2026-01-02', imported_id: 'statement-1-transaction-1' }]),
+      resolvePayee: vi.fn().mockResolvedValue('payee-1'),
       synchronize: vi.fn().mockResolvedValue(undefined),
       updateTransaction: vi.fn().mockResolvedValue(undefined),
     };

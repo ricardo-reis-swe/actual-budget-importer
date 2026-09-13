@@ -22,6 +22,7 @@ export interface DatabaseSchema {
     created_at: string;
     description_contains: string;
     id: Generated<number>;
+    parser_id: string | null;
     position: number;
   };
   paperless_parser_mappings: {
@@ -176,6 +177,15 @@ const migrations: Migration[] = [
         .addColumn('name', 'text', (column) => column.notNull())
         .addColumn('hidden', 'integer', (column) => column.notNull().defaultTo(0))
         .addColumn('deleted', 'integer', (column) => column.notNull().defaultTo(0))
+        .execute();
+    },
+  },
+  {
+    name: '004_categorization_rule_parser_scope',
+    async up(database) {
+      await database.schema
+        .alterTable('categorization_rules')
+        .addColumn('parser_id', 'text')
         .execute();
     },
   },

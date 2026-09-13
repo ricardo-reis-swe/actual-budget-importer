@@ -7,6 +7,7 @@ import { buildServer, type ApplicationLogger } from '../src/server.js';
 import { StatementManagement } from '../src/statements/statement-management.js';
 import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
 import { CategoryCreation } from '../src/categories/category-creation.js';
+import { CategorizationRules } from '../src/rules/categorization-rules.js';
 import type { BankParser } from '../src/parsers/bank-parser.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
@@ -41,11 +42,13 @@ async function createStatementServer() {
     excluded: 0,
     stable_import_id: 'synthetic-import-id',
   }).returning('id').executeTakeFirstOrThrow();
+  const rules = new CategorizationRules(database.db, () => new Date(timestamp));
   const app = buildServer({
     database,
+    categorizationRules: rules,
     statements: new StatementManagement(database.db, () => new Date(timestamp)),
   });
-  return { app, database, statement, transaction };
+  return { app, database, rules, statement, transaction };
 }
 
 describe('server baseline', () => {
@@ -277,6 +280,24 @@ describe('server baseline', () => {
     await database.close();
   });
 
+  it('orders ISO transaction dates correctly in statement summaries', async () => {
+    const { app, database, statement } = await createStatementServer();
+
+    await database.db.insertInto('statement_transactions').values([
+      { statement_id: statement.id, position: 1, date: '2026-08-16', description: 'Later transaction', amount_cents: -100, excluded: 0, stable_import_id: 'iso-later' },
+      { statement_id: statement.id, position: 2, date: '2026-07-16', description: 'Earlier transaction', amount_cents: -100, excluded: 0, stable_import_id: 'iso-earlier' },
+    ]).execute();
+
+    const list = await app.inject({ method: 'GET', url: '/api/statements' });
+
+    expect(list.json()).toEqual({ statements: [expect.objectContaining({
+      id: statement.id,
+      dateRange: { start: '31-12-2025', end: '2026-08-16' },
+    })] });
+    await app.close();
+    await database.close();
+  });
+
   it('saves validated review changes and protects published statements', async () => {
     const { app, database, statement, transaction } = await createStatementServer();
 
@@ -298,6 +319,28 @@ describe('server baseline', () => {
     });
     expect(publishedUpdate.statusCode).toBe(400);
     expect(publishedUpdate.json()).toEqual({ message: 'Published statements cannot be edited.' });
+    await app.close();
+    await database.close();
+  });
+
+  it('applies matching rules only to uncategorized transactions in an unpublished statement', async () => {
+    const { app, database, rules, statement, transaction } = await createStatementServer();
+    await rules.create({ categoryId: 'groceries', descriptionContains: 'merchant' });
+    await database.db.insertInto('statement_transactions').values({
+      statement_id: statement.id, position: 1, date: '01-01-2026', description: 'Merchant already assigned',
+      amount_cents: -100, actual_category_id: 'manual', excluded: 0, stable_import_id: 'manual-category',
+    }).execute();
+
+    const applied = await app.inject({ method: 'POST', url: `/api/statements/${statement.id}/apply-rules` });
+
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().appliedCount).toBe(1);
+    expect(applied.json().statement.transactions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: transaction.id, actualCategoryId: 'groceries' }),
+      expect.objectContaining({ actualCategoryId: 'manual' }),
+    ]));
+    const appliedAgain = await app.inject({ method: 'POST', url: `/api/statements/${statement.id}/apply-rules` });
+    expect(appliedAgain.json().appliedCount).toBe(0);
     await app.close();
     await database.close();
   });
