@@ -27,7 +27,8 @@ Install Docker Compose, edit the placeholders in `docker-compose.yaml`, then
 run:
 
 ```sh
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 Open `http://localhost:3000`. The local `./data` directory keeps the SQLite
@@ -40,8 +41,7 @@ name: actual-budget-importer
 
 services:
   actual-budget-importer:
-    build: .
-    image: actual-budget-importer:latest
+    image: ghcr.io/ricardo-reis-swe/actual-budget-importer:latest
     container_name: actual-budget-importer
     init: true
     restart: unless-stopped
