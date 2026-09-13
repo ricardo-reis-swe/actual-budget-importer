@@ -71,6 +71,13 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     });
   }
 
+  async createCategoryGroup(name: string): Promise<{ id: string; name: string }> {
+    return this.withBudget(async () => {
+      const id = await actual.createCategoryGroup({ name, is_income: false, hidden: false });
+      return { id, name };
+    });
+  }
+
   async updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void> {
     await this.withBudget(() => actual.updateTransaction(id, transaction as never));
   }

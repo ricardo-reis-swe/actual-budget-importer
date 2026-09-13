@@ -28,9 +28,10 @@ Requires Node.js 22+ and pnpm.
 pnpm install
 pnpm run typecheck
 pnpm test
-pnpm run build
 pnpm start:server
 ```
+
+`pnpm start:server` starts the API on port 3000 and the Vite interface on port 5173. Both listen on all network interfaces for local-network development. Use `pnpm start:api` to start only the API.
 
 Use synthetic statements and mocked integrations in tests. Never commit credentials, real statements, or personal financial data.
 

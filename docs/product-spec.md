@@ -7,8 +7,8 @@ PDF uploads and prepares their transactions for review before
 sending them to Actual Budget.
 
 Users can assign categories and create reusable categorization
-rules. Saved rules automatically populate categories in future
-statements.
+rules. Saved rules automatically populate categories and
+inclusion choices in future statements.
 
 Transactions are sent to Actual Budget only when the user
 explicitly selects Publish.
@@ -70,6 +70,8 @@ people can use it.
 - Users can assign or change a transaction's category.
 - Users can explicitly create reusable rules such as:
   "If the description contains X, assign category Y."
+- A rule can assign a category, mark matching transactions as
+  included or excluded, or do both.
 - Assigning a category does not automatically create a rule.
 - Saved rules populate categories in new statements.
   Users can change those categories during review.
@@ -105,6 +107,11 @@ people can use it.
 - For direct uploads, require parser selection for each new
   statement and never preselect a parser based on earlier
   uploads.
+- Provide parser settings in the application header. Let users
+  choose which installed parsers appear in parser dropdowns and
+  configure automatic Paperless correspondent-to-parser rules.
+- Hiding a parser affects selection lists only. Keep it usable by
+  existing statements and saved correspondent rules.
 
 ## Manual parser selection
 
@@ -253,8 +260,11 @@ people can use it.
 
 - Retrieve available categories and category groups from the
   configured Actual Budget file.
+- Let users create a category group.
 - Let users select an existing category or create a category
   under an existing category group.
+- Create a category group in Actual Budget only after the user
+  explicitly confirms the action.
 - Create a category in Actual Budget only after the user
   explicitly confirms the action.
 - Store and use the category ID returned by Actual Budget.
@@ -295,8 +305,8 @@ people can use it.
 
 - Require rule matching text to contain at least one
   non-whitespace character.
-- Require a valid Actual Budget category when creating or
-  editing a rule.
+- Require a rule to assign a valid Actual Budget category, set
+  whether matching transactions are included, or both.
 - If a saved rule's category has been deleted, flag the rule
   for attention and skip it during automatic categorization.
 - Continue checking subsequent rules in their saved order.
@@ -311,6 +321,8 @@ people can use it.
   that option.
 - Do not overwrite categories the user already assigned to
   other transactions.
+- Applying rules may change inclusion when a matching rule has
+  an explicit include or exclude action.
 - Let the user apply the saved rules to the current unpublished
   statement without creating a new rule.
 - Apply saved rules automatically to new statements from
@@ -368,8 +380,8 @@ people can use it.
 
 - Provide a page where users can view all saved rules.
 - Let users create, edit, delete, and reorder rules.
-- Show each rule's description text, assigned category,
-  and position in the matching order.
+- Show each rule's description text, category action, inclusion
+  action, and position in the matching order.
 - Apply rules to statements from every bank by default.
 - Let the user optionally scope a rule to one parser.
 - Apply a parser-scoped rule only when the statement used that

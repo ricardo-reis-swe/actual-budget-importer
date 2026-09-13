@@ -8,6 +8,18 @@ import { CategoryCatalog } from '../src/categories/category-catalog.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
 describe('category catalog synchronization', () => {
+  it('keeps empty active groups available for category creation', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const catalog = new CategoryCatalog(database.db);
+
+    await expect(catalog.refresh({
+      getCategoriesGrouped: vi.fn().mockResolvedValue([{ id: 'empty-group', name: 'Everyday', categories: [] }]),
+    })).resolves.toEqual([{ id: 'empty-group', name: 'Everyday', deleted: false, categories: [] }]);
+
+    await database.close();
+  });
+
   it('caches groups and retains categories used by transactions after deletion', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();

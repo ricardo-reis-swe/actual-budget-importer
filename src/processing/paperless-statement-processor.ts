@@ -9,7 +9,7 @@ import { type DatabaseSchema } from '../storage/migrations.js';
 import { type CategorizationRuleMatcher } from '../rules/categorization-rules.js';
 
 export class PaperlessStatementError extends Error {
-  constructor(readonly code: 'INVALID_PARSER' | 'STATEMENT_NOT_FOUND' | 'STATEMENT_NOT_PAPERLESS' | 'STATEMENT_NOT_RETRYABLE' | 'STATEMENT_READ_ONLY') {
+  constructor(readonly code: 'INVALID_PARSER' | 'PARSER_CHANGE_REQUIRES_CONFIRMATION' | 'STATEMENT_NOT_FOUND' | 'STATEMENT_NOT_PAPERLESS' | 'STATEMENT_NOT_RETRYABLE' | 'STATEMENT_READ_ONLY') {
     super(code);
   }
 }
@@ -40,13 +40,22 @@ export class PaperlessStatementProcessor {
       }).where('id', '=', statementId).where('status', '=', 'processing').execute();
       return;
     }
-    await this.extract(statementId, this.requireParser(mapping.parser_id), document.id);
+    const parser = this.requireParser(mapping.parser_id);
+    await this.database.updateTable('statements').set({
+      parser_id: parser.id, updated_at: this.now().toISOString(),
+    }).where('id', '=', statementId).where('status', '=', 'processing').execute();
+    await this.extract(statementId, parser, document.id);
   }
 
-  async selectParser(statementId: number, parserId: string): Promise<void> {
+  async selectParser(statementId: number, parserId: string, confirmed = false): Promise<void> {
     const statement = await this.requirePaperless(statementId);
     if (statement.status === 'published') throw new PaperlessStatementError('STATEMENT_READ_ONLY');
     const parser = this.requireParser(parserId);
+    const transaction = await this.database.selectFrom('statement_transactions').select('id')
+      .where('statement_id', '=', statementId).limit(1).executeTakeFirst();
+    if ((statement.parser_id !== null || transaction) && !confirmed) {
+      throw new PaperlessStatementError('PARSER_CHANGE_REQUIRES_CONFIRMATION');
+    }
     await this.database.transaction().execute(async (transaction) => {
       await transaction.deleteFrom('statement_transactions').where('statement_id', '=', statementId).execute();
       await transaction.updateTable('statements').set({
@@ -101,21 +110,24 @@ export class PaperlessStatementProcessor {
       const rows = await parser.parse(pdf);
       if (rows.length === 0) throw new Error('No transactions extracted.');
       const contentHash = createHash('sha256').update(pdf).digest('hex');
-      const categorizedRows = await Promise.all(rows.map(async (row) => ({
-        ...row,
-        categoryId: await this.categorizationRules?.match(row.description, parser.id) ?? null,
-      })));
+      const categorizedRows = await Promise.all(rows.map(async (row) => {
+        const rule = await this.categorizationRules?.match(row.description, parser.id);
+        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false };
+      }));
       await this.database.transaction().execute(async (transaction) => {
+        const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
+          .where('id', '=', statementId).executeTakeFirst();
+        if (current?.status !== 'processing' || current.parser_id !== parser.id) return;
         await transaction.deleteFrom('statement_transactions').where('statement_id', '=', statementId).execute();
         await transaction.insertInto('statement_transactions').values(categorizedRows.map((row) => ({
           statement_id: statementId, position: row.position, date: row.date, description: row.description,
-          amount_cents: row.amountCents, actual_category_id: row.categoryId, excluded: 0, stable_import_id: randomUUID(),
+          amount_cents: row.amountCents, actual_category_id: row.categoryId, excluded: row.excluded ? 1 : 0, stable_import_id: randomUUID(),
         }))).execute();
         await transaction.updateTable('statements').set({ content_hash: contentHash, parser_id: parser.id,
           status: 'ready for review', error_message: null, diagnostic_id: null, updated_at: this.now().toISOString() })
           .where('id', '=', statementId).execute();
       });
-    } catch (cause) { await this.recordFailure(statementId, cause); }
+    } catch (cause) { await this.recordFailure(statementId, cause, parser.id); }
   }
 
   private async saveMetadata(statementId: number, document: PaperlessDocument): Promise<void> {
@@ -125,10 +137,11 @@ export class PaperlessStatementProcessor {
       updated_at: this.now().toISOString() }).where('id', '=', statementId).execute();
   }
 
-  private async recordFailure(statementId: number, cause: unknown): Promise<void> {
+  private async recordFailure(statementId: number, cause: unknown, parserId?: string): Promise<void> {
     const failure = createSanitizedFailure(cause, 'extraction', randomUUID());
     await this.database.updateTable('statements').set({ status: 'extraction failed', error_message: toUserFailure(failure).message,
-      diagnostic_id: failure.diagnosticId, updated_at: this.now().toISOString() }).where('id', '=', statementId).execute();
+      diagnostic_id: failure.diagnosticId, updated_at: this.now().toISOString() }).where('id', '=', statementId)
+      .$if(parserId !== undefined, (query) => query.where('parser_id', '=', parserId!)).execute();
   }
 
   private requireParser(parserId: string): BankParser {
@@ -138,7 +151,7 @@ export class PaperlessStatementProcessor {
   }
 
   private async requirePaperless(statementId: number) {
-    const statement = await this.database.selectFrom('statements').select(['id', 'paperless_document_id', 'status'])
+    const statement = await this.database.selectFrom('statements').select(['id', 'paperless_document_id', 'parser_id', 'status'])
       .where('id', '=', statementId).executeTakeFirst();
     if (!statement) throw new PaperlessStatementError('STATEMENT_NOT_FOUND');
     if (statement.paperless_document_id === null) throw new PaperlessStatementError('STATEMENT_NOT_PAPERLESS');

@@ -56,10 +56,34 @@ export class StatementManagement {
   constructor(
     private readonly database: Kysely<DatabaseSchema>,
     private readonly now: () => Date = () => new Date(),
+    private readonly paperless?: { getCorrespondentName(correspondentId: number): Promise<string> },
   ) {}
 
   async list(): Promise<StatementSummary[]> {
     const statements = await this.database.selectFrom('statements').selectAll().orderBy('created_at', 'desc').execute();
+    const correspondentNames = new Map<number, string>();
+    for (const statement of statements) {
+      if (statement.paperless_correspondent_id !== null && statement.paperless_correspondent_name !== null) {
+        correspondentNames.set(statement.paperless_correspondent_id, statement.paperless_correspondent_name);
+      }
+    }
+    if (this.paperless) {
+      const missingIds = [...new Set(statements
+        .filter((statement) => statement.paperless_correspondent_id !== null && statement.paperless_correspondent_name === null)
+        .map((statement) => statement.paperless_correspondent_id!))];
+      await Promise.all(missingIds.map(async (correspondentId) => {
+        try {
+          const name = await this.paperless!.getCorrespondentName(correspondentId);
+          correspondentNames.set(correspondentId, name);
+          await this.database.updateTable('statements')
+            .set({ paperless_correspondent_name: name })
+            .where('paperless_correspondent_id', '=', correspondentId)
+            .execute();
+        } catch {
+          // Keep the dashboard available when Paperless is temporarily unavailable.
+        }
+      }));
+    }
     const transactionCounts = await this.database
       .selectFrom('statement_transactions')
       .select(({ fn }) => [fn.count<number>('id').as('count'), 'statement_id'])
@@ -87,7 +111,8 @@ export class StatementManagement {
       id: statement.id,
       originalFilename: statement.original_filename,
       parserId: statement.parser_id,
-      paperlessCorrespondentName: statement.paperless_correspondent_name,
+      paperlessCorrespondentName: statement.paperless_correspondent_name
+        ?? (statement.paperless_correspondent_id === null ? null : correspondentNames.get(statement.paperless_correspondent_id) ?? null),
       paperlessDocumentDate: statement.paperless_document_date,
       paperlessDocumentTitle: statement.paperless_document_title,
       status: statement.status,
@@ -210,18 +235,26 @@ export class StatementManagement {
 
     const transactions = await this.database
       .selectFrom('statement_transactions')
-      .select(['actual_category_id', 'description', 'id', 'reviewed_description'])
+      .select(['actual_category_id', 'description', 'excluded', 'id', 'reviewed_description'])
       .where('statement_id', '=', statementId)
       .execute();
-    const matches = await Promise.all(transactions
-      .filter((item) => item.actual_category_id === null)
-      .map(async (item) => ({ id: item.id, categoryId: await rules.match(item.reviewed_description ?? item.description, statement.parser_id) })));
-    const matchedTransactions = matches.filter((item): item is { categoryId: string; id: number } => item.categoryId !== null);
+    const matches = await Promise.all(transactions.map(async (item) => ({
+      currentCategoryId: item.actual_category_id,
+      currentExcluded: item.excluded === 1,
+      id: item.id,
+      rule: await rules.match(item.reviewed_description ?? item.description, statement.parser_id),
+    })));
+    const matchedTransactions = matches.map((item) => ({
+      ...item,
+      categoryId: item.currentCategoryId === null ? item.rule?.categoryId ?? null : item.currentCategoryId,
+      excluded: item.rule?.excluded ?? item.currentExcluded,
+    })).filter((item) => item.rule !== null
+      && (item.categoryId !== item.currentCategoryId || item.excluded !== item.currentExcluded));
     let applied = false;
     await this.database.transaction().execute(async (transaction) => {
       for (const item of matchedTransactions) {
         await transaction.updateTable('statement_transactions')
-          .set({ actual_category_id: item.categoryId })
+          .set({ actual_category_id: item.categoryId, excluded: item.excluded ? 1 : 0 })
           .where('id', '=', item.id)
           .execute();
         applied = true;

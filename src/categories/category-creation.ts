@@ -3,12 +3,18 @@ export interface ActualCategory {
   name: string;
 }
 
+export interface ActualCategoryGroup {
+  id: string;
+  name: string;
+}
+
 export interface ActualCategoryCreator {
   createCategory(groupId: string, name: string): Promise<ActualCategory>;
+  createCategoryGroup(name: string): Promise<ActualCategoryGroup>;
 }
 
 export class CategoryCreationError extends Error {
-  constructor(readonly code: 'CATEGORY_CREATION_NOT_CONFIRMED' | 'INVALID_CATEGORY_GROUP' | 'INVALID_CATEGORY_NAME') {
+  constructor(readonly code: 'CATEGORY_CREATION_NOT_CONFIRMED' | 'CATEGORY_GROUP_CREATION_NOT_CONFIRMED' | 'INVALID_CATEGORY_GROUP' | 'INVALID_CATEGORY_NAME' | 'INVALID_CATEGORY_GROUP_NAME') {
     super(code);
   }
 }
@@ -32,5 +38,18 @@ export class CategoryCreation {
     }
 
     return this.actualBudget.createCategory(groupId, name);
+  }
+
+  async createGroup(input: { confirmed: boolean; name: string }): Promise<ActualCategoryGroup> {
+    if (!input.confirmed) {
+      throw new CategoryCreationError('CATEGORY_GROUP_CREATION_NOT_CONFIRMED');
+    }
+
+    const name = input.name.trim();
+    if (!name) {
+      throw new CategoryCreationError('INVALID_CATEGORY_GROUP_NAME');
+    }
+
+    return this.actualBudget.createCategoryGroup(name);
   }
 }

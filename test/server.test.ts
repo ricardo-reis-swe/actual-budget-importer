@@ -52,10 +52,51 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
-  it('accepts configured Paperless webhooks and returns the durable statement state', async () => {
-    const acceptPaperlessDocument = vi.fn().mockResolvedValue({ id: 42, status: 'queued' });
+  it('creates an exclusion-only rule through the API', async () => {
+    const { app, database } = await createStatementServer();
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/categorization-rules',
+      payload: { categoryId: null, descriptionContains: 'internal transfer', excluded: true, parserId: null },
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ categoryId: null, descriptionContains: 'internal transfer', excluded: true });
+    await app.close();
+    await database.close();
+  });
+
+  it('passes parser selection confirmation through to Paperless controls', async () => {
+    const selectParser = vi.fn().mockResolvedValue(undefined);
     const app = buildServer({
       database: { checkHealth: () => undefined },
+      paperlessControls: {
+        mappings: vi.fn().mockResolvedValue([]),
+        retry: vi.fn(),
+        selectParser,
+        setMapping: vi.fn(),
+        synchronize: vi.fn(),
+      },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/statements/42/paperless/parser',
+      payload: { confirm: true, parserId: 'activobank' },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(selectParser).toHaveBeenCalledWith(42, 'activobank', true);
+    await app.close();
+  });
+
+  it('accepts configured Paperless webhooks and returns the durable statement state', async () => {
+    const acceptPaperlessDocument = vi.fn().mockResolvedValue({ id: 42, status: 'queued' });
+    const info = vi.fn();
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      logger: { error: vi.fn(), info },
       paperlessLifecycle: { acceptPaperlessDocument },
     });
 
@@ -69,6 +110,22 @@ describe('server baseline', () => {
     expect(accepted.statusCode).toBe(202);
     expect(accepted.json()).toEqual({ statementId: 42, status: 'queued' });
     expect(acceptPaperlessDocument).toHaveBeenCalledWith(23);
+    expect(info).toHaveBeenCalledWith({
+      event: 'paperless_webhook_accepted',
+      httpStatus: 202,
+      paperlessDocumentId: 23,
+      statementId: 42,
+      statementStatus: 'queued',
+    });
+
+    const parameterEncoded = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/paperless',
+      headers: { 'content-type': 'application/json' },
+      payload: { document_id: '24' },
+    });
+    expect(parameterEncoded.statusCode).toBe(202);
+    expect(acceptPaperlessDocument).toHaveBeenCalledWith(24);
 
     const invalid = await app.inject({
       method: 'POST',
@@ -77,14 +134,37 @@ describe('server baseline', () => {
       payload: { document_id: 0 },
     });
     expect(invalid.statusCode).toBe(400);
+    expect(info).toHaveBeenCalledWith({
+      bodyKeys: ['document_id'],
+      bodyKind: 'object',
+      contentType: 'application/json',
+      documentIdType: 'number',
+      event: 'paperless_webhook_rejected',
+      httpStatus: 400,
+      reason: 'invalid_document_id',
+    });
 
-    const unsupported = await app.inject({
+    const formEncoded = await app.inject({
       method: 'POST',
       url: '/api/webhooks/paperless',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: 'document_id=23',
     });
+    expect(formEncoded.statusCode).toBe(202);
+    expect(acceptPaperlessDocument).toHaveBeenCalledWith(23);
+
+    const unsupported = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/paperless',
+      headers: { 'content-type': 'text/plain' },
+      payload: 'document_id=23',
+    });
     expect(unsupported.statusCode).toBe(415);
+    expect(info).toHaveBeenCalledWith({
+      event: 'paperless_webhook_rejected',
+      httpStatus: 415,
+      reason: 'unsupported_content_type',
+    });
     await app.close();
   });
 
@@ -120,7 +200,7 @@ describe('server baseline', () => {
     const createCategory = vi.fn().mockResolvedValue({ id: 'actual-category-1', name: 'Groceries' });
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory }),
+      categoryCreation: new CategoryCreation({ createCategory, createCategoryGroup: vi.fn() }),
     });
 
     const unconfirmed = await app.inject({
@@ -136,6 +216,29 @@ describe('server baseline', () => {
     expect(created.statusCode).toBe(201);
     expect(created.json()).toEqual({ id: 'actual-category-1', name: 'Groceries' });
     expect(createCategory).toHaveBeenCalledWith('group-1', 'Groceries');
+    await app.close();
+  });
+
+  it('creates category groups only with confirmation and returns the Actual Budget group ID', async () => {
+    const createCategoryGroup = vi.fn().mockResolvedValue({ id: 'actual-group-1', name: 'Everyday' });
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup }),
+    });
+
+    const unconfirmed = await app.inject({
+      method: 'POST', url: '/api/category-groups', payload: { confirmed: false, name: 'Everyday' },
+    });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(unconfirmed.json()).toEqual({ message: 'Category group creation requires confirmation.' });
+    expect(createCategoryGroup).not.toHaveBeenCalled();
+
+    const created = await app.inject({
+      method: 'POST', url: '/api/category-groups', payload: { confirmed: true, name: 'Everyday' },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toEqual({ id: 'actual-group-1', name: 'Everyday' });
+    expect(createCategoryGroup).toHaveBeenCalledWith('Everyday');
     await app.close();
   });
 
@@ -343,6 +446,23 @@ describe('server baseline', () => {
     expect(appliedAgain.json().appliedCount).toBe(0);
     await app.close();
     await database.close();
+  });
+
+  it('applies include and exclude effects without overwriting an assigned category', async () => {
+    const { app, database, rules, statement, transaction } = await createStatementServer();
+    await database.db.updateTable('statement_transactions').set({ actual_category_id: 'manual' })
+      .where('id', '=', transaction.id).execute();
+    await rules.create({ categoryId: null, descriptionContains: 'merchant', excluded: true });
+
+    const applied = await app.inject({ method: 'POST', url: `/api/statements/${statement.id}/apply-rules` });
+
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().appliedCount).toBe(1);
+    expect(applied.json().statement.transactions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: transaction.id, actualCategoryId: 'manual', excluded: true }),
+    ]));
+    await database.close();
+    await app.close();
   });
 
   it('requires confirmation and removes statement records only when not active', async () => {

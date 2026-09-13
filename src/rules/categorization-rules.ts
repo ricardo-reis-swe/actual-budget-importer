@@ -3,20 +3,26 @@ import { type Kysely } from 'kysely';
 import { type DatabaseSchema } from '../storage/migrations.js';
 
 export interface CategorizationRule {
-  categoryId: string;
+  categoryId: string | null;
   createdAt: string;
   descriptionContains: string;
+  excluded: boolean | null;
   id: number;
   parserId: string | null;
   position: number;
 }
 
 export interface CategorizationRuleMatcher {
-  match(description: string, parserId?: string | null): Promise<string | null>;
+  match(description: string, parserId?: string | null): Promise<RuleMatch | null>;
+}
+
+export interface RuleMatch {
+  categoryId: string | null;
+  excluded: boolean | null;
 }
 
 export class CategorizationRuleError extends Error {
-  constructor(readonly code: 'INVALID_CATEGORY' | 'INVALID_MATCH_TEXT' | 'INVALID_RULE_ORDER' | 'RULE_NOT_FOUND') {
+  constructor(readonly code: 'INVALID_CATEGORY' | 'INVALID_INCLUSION_ACTION' | 'INVALID_MATCH_TEXT' | 'INVALID_RULE_ACTION' | 'INVALID_RULE_ORDER' | 'RULE_NOT_FOUND') {
     super(code);
   }
 }
@@ -38,8 +44,8 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     return rules.map(toRule);
   }
 
-  async create(input: { categoryId: string; descriptionContains: string; parserId?: string | null }): Promise<CategorizationRule> {
-    const categoryId = requireCategory(input.categoryId);
+  async create(input: RuleInput): Promise<CategorizationRule> {
+    const action = requireAction(input);
     const descriptionContains = requireMatchText(input.descriptionContains);
     const lastRule = await this.database
       .selectFrom('categorization_rules')
@@ -50,9 +56,11 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     const rule = await this.database
       .insertInto('categorization_rules')
       .values({
-        category_id: categoryId,
+        category_enabled: action.categoryId === null ? 0 : 1,
+        category_id: action.categoryId ?? '',
         created_at: this.now().toISOString(),
         description_contains: descriptionContains,
+        inclusion_action: action.inclusionAction,
         parser_id: normalizeParser(input.parserId),
         position: (lastRule?.position ?? -1) + 1,
       })
@@ -61,12 +69,18 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     return toRule(rule);
   }
 
-  async update(ruleId: number, input: { categoryId: string; descriptionContains: string; parserId?: string | null }): Promise<CategorizationRule> {
-    const categoryId = requireCategory(input.categoryId);
+  async update(ruleId: number, input: RuleInput): Promise<CategorizationRule> {
+    const action = requireAction(input);
     const descriptionContains = requireMatchText(input.descriptionContains);
     const rule = await this.database
       .updateTable('categorization_rules')
-      .set({ category_id: categoryId, description_contains: descriptionContains, parser_id: normalizeParser(input.parserId) })
+      .set({
+        category_enabled: action.categoryId === null ? 0 : 1,
+        category_id: action.categoryId ?? '',
+        description_contains: descriptionContains,
+        inclusion_action: action.inclusionAction,
+        parser_id: normalizeParser(input.parserId),
+      })
       .where('id', '=', ruleId)
       .returningAll()
       .executeTakeFirst();
@@ -95,12 +109,12 @@ export class CategorizationRules implements CategorizationRuleMatcher {
     });
   }
 
-  async match(description: string, parserId?: string | null): Promise<string | null> {
+  async match(description: string, parserId?: string | null): Promise<RuleMatch | null> {
     const normalizedDescription = description.toLowerCase();
     for (const rule of await this.list()) {
       if ((rule.parserId === null || rule.parserId === parserId)
         && normalizedDescription.includes(rule.descriptionContains.toLowerCase())) {
-        return rule.categoryId;
+        return { categoryId: rule.categoryId, excluded: rule.excluded };
       }
     }
     return null;
@@ -112,10 +126,25 @@ function normalizeParser(parserId: string | null | undefined): string | null {
   return normalized || null;
 }
 
-function requireCategory(categoryId: string): string {
-  const normalized = categoryId.trim();
-  if (!normalized) throw new CategorizationRuleError('INVALID_CATEGORY');
-  return normalized;
+interface RuleInput {
+  categoryId?: string | null;
+  descriptionContains: string;
+  excluded?: boolean | null;
+  parserId?: string | null;
+}
+
+function requireAction(input: RuleInput): { categoryId: string | null; inclusionAction: string | null } {
+  if (input.excluded !== undefined && input.excluded !== null && typeof input.excluded !== 'boolean') {
+    throw new CategorizationRuleError('INVALID_INCLUSION_ACTION');
+  }
+  const normalizedCategory = input.categoryId?.trim();
+  if (input.categoryId !== undefined && input.categoryId !== null && !normalizedCategory) {
+    throw new CategorizationRuleError('INVALID_CATEGORY');
+  }
+  const categoryId = normalizedCategory || null;
+  const inclusionAction = input.excluded === true ? 'exclude' : input.excluded === false ? 'include' : null;
+  if (categoryId === null && inclusionAction === null) throw new CategorizationRuleError('INVALID_RULE_ACTION');
+  return { categoryId, inclusionAction };
 }
 
 function requireMatchText(descriptionContains: string): string {
@@ -126,16 +155,19 @@ function requireMatchText(descriptionContains: string): string {
 
 function toRule(rule: {
   category_id: string;
+  category_enabled: number;
   created_at: string;
   description_contains: string;
   id: number;
+  inclusion_action: string | null;
   parser_id: string | null;
   position: number;
 }): CategorizationRule {
   return {
-    categoryId: rule.category_id,
+    categoryId: rule.category_enabled === 1 ? rule.category_id : null,
     createdAt: rule.created_at,
     descriptionContains: rule.description_contains,
+    excluded: rule.inclusion_action === 'exclude' ? true : rule.inclusion_action === 'include' ? false : null,
     id: rule.id,
     parserId: rule.parser_id,
     position: rule.position,

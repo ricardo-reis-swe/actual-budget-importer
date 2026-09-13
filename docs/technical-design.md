@@ -33,7 +33,8 @@
 
 - Enable this endpoint only when Paperless-ngx is configured.
 - Provide `POST /api/webhooks/paperless`.
-- Accept a JSON body containing the Paperless-ngx document ID.
+- Accept a JSON or URL-encoded form body containing the
+  Paperless-ngx document ID.
 - Do not accept the PDF or document metadata in the webhook;
   retrieve them through the Paperless-ngx API.
 - Return an accepted response only after the document ID has
@@ -46,8 +47,10 @@
 
 ## Paperless-ngx webhook request and response
 
-- Require a JSON object containing a positive integer
-  `document_id`.
+- Require `document_id` as either a positive integer or its
+  digit-only string representation in a JSON object or
+  URL-encoded form body, so Paperless-ngx key-value webhook
+  bodies are accepted without custom headers.
 - Return HTTP 202 after the document ID has been stored
   durably.
 - Include the app's statement ID and current status in the
@@ -78,6 +81,16 @@
 - Send the reviewed date, signed amount, and optional category.
 - Mark published statement transactions as cleared.
 - Leave notes empty.
+
+## Actual Budget category creation
+
+- Provide `POST /api/category-groups` with a confirmed group name.
+- Create category groups as standard expense groups through the
+  official `@actual-app/api` package.
+- Return the Actual Budget category group ID and refresh the local
+  category cache before using the group.
+- Provide `POST /api/categories` with a confirmed category name and
+  an existing Actual Budget category group ID.
 
 ## Actual Budget publishing procedure
 
@@ -137,6 +150,10 @@
   Paperless-ngx, or Actual Budget directly.
 - Adding a bank should require a new parser without changing the
   general statement workflow.
+- Persist per-parser dropdown visibility in SQLite, defaulting new
+  parsers to visible.
+- Expose installed parser visibility and known Paperless
+  correspondent mappings through parser-settings API endpoints.
 
 ## Technology choices
 
@@ -166,6 +183,9 @@
 - Store the database in a configurable persistent data
   directory outside the application source.
 - Run only one application instance against a database file.
+- Store category and inclusion effects independently on each
+  saved rule. Preserve existing category-only rules when the
+  schema is migrated.
 
 ## Application configuration
 

@@ -29,6 +29,7 @@ import {
 } from './publishing/statement-publisher.js';
 import type { BankParser } from './parsers/bank-parser.js';
 import { CategoryCatalog, type ActualCategorySource } from './categories/category-catalog.js';
+import { ParserSettings, ParserSettingsError } from './parsers/parser-settings.js';
 
 export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
@@ -37,7 +38,7 @@ export interface PaperlessStatementLifecycle {
 export interface PaperlessStatementControls {
   mappings(): Promise<{ correspondentId: number; parserId: string }[]>;
   setMapping(correspondentId: number, parserId: string): Promise<void>;
-  selectParser(statementId: number, parserId: string): Promise<void>;
+  selectParser(statementId: number, parserId: string, confirmed?: boolean): Promise<void>;
   retry(statementId: number): Promise<void>;
   synchronize(statementId: number): Promise<void>;
 }
@@ -48,6 +49,7 @@ export interface DatabaseHealth {
 
 export interface ApplicationLogger {
   error(failure: SanitizedFailure): void;
+  info?(event: Record<string, unknown>): void;
 }
 
 export interface ServerOptions {
@@ -62,12 +64,16 @@ export interface ServerOptions {
   paperlessControls?: PaperlessStatementControls;
   publisher?: StatementPublisher;
   parsers?: readonly Pick<BankParser, 'id' | 'name'>[];
+  parserSettings?: ParserSettings;
   statements?: StatementManagement;
 }
 
 const consoleLogger: ApplicationLogger = {
   error(failure) {
     console.error(JSON.stringify(failure));
+  },
+  info(event) {
+    console.info(JSON.stringify(event));
   },
 };
 
@@ -85,8 +91,50 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const logger = options.logger ?? consoleLogger;
 
+  if (options.parserSettings) {
+    app.get('/api/parsers', async () => ({ parsers: await options.parserSettings!.listParsers() }));
+    app.get('/api/parser-settings', async () => ({
+      correspondents: await options.parserSettings!.listCorrespondents(),
+      parsers: await options.parserSettings!.listParsers(true),
+    }));
+    app.patch<{ Body: unknown; Params: { parserId: string } }>('/api/parser-settings/parsers/:parserId', async (request, reply) => {
+      if (!isRecord(request.body) || typeof request.body.enabled !== 'boolean') {
+        return reply.code(400).send({ message: 'Provide whether the parser should be shown.' });
+      }
+      try {
+        await options.parserSettings!.setParserEnabled(request.params.parserId, request.body.enabled);
+        return reply.code(204).send();
+      } catch (error) {
+        return parserSettingsError(reply, error);
+      }
+    });
+    app.put<{ Body: unknown; Params: { correspondentId: string } }>('/api/parser-settings/correspondents/:correspondentId', async (request, reply) => {
+      if (!isRecord(request.body) || (request.body.parserId !== null && typeof request.body.parserId !== 'string')) {
+        return reply.code(400).send({ message: 'Provide a parser ID or null.' });
+      }
+      try {
+        const correspondentId = Number(request.params.correspondentId);
+        if (!Number.isSafeInteger(correspondentId) || correspondentId < 1) {
+          return reply.code(400).send({ message: 'Select a valid Paperless correspondent.' });
+        }
+        const parserId = typeof request.body.parserId === 'string' ? request.body.parserId.trim() : null;
+        await options.parserSettings!.setCorrespondentParser(correspondentId, parserId || null);
+        return reply.code(204).send();
+      } catch (error) {
+        return parserSettingsError(reply, error);
+      }
+    });
+  } else if (options.parsers) {
+    app.get('/api/parsers', async () => ({ parsers: options.parsers }));
+  }
+
   app.addContentTypeParser(/^multipart\/form-data(?:;|$)/, { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
+  });
+
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
+    const form = typeof body === 'string' ? body : body.toString('utf8');
+    done(null, Object.fromEntries(new URLSearchParams(form)));
   });
 
   app.get('/api/health', async (_request, reply) => {
@@ -206,6 +254,24 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         throw error;
       }
     });
+
+    app.post<{ Body: unknown }>('/api/category-groups', async (request, reply) => {
+      try {
+        const group = await categoryCreation.createGroup(validateCategoryGroupCreation(request.body));
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
+        return reply.code(201).send(group);
+      } catch (error) {
+        if (error instanceof CategoryCreationError) {
+          const message = error.code === 'CATEGORY_GROUP_CREATION_NOT_CONFIRMED'
+            ? 'Category group creation requires confirmation.'
+            : 'Provide a category group name.';
+          return reply.code(400).send({ message });
+        }
+        throw error;
+      }
+    });
   }
 
   if (options.categoryCatalog) {
@@ -261,14 +327,34 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     const paperlessLifecycle = options.paperlessLifecycle;
 
     app.post<{ Body: unknown }>('/api/webhooks/paperless', async (request, reply) => {
-      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
-        return reply.code(415).send({ message: 'Use application/json for Paperless-ngx webhooks.' });
+      const contentType = request.headers['content-type']?.toLowerCase();
+      if (!contentType?.startsWith('application/json')
+        && !contentType?.startsWith('application/x-www-form-urlencoded')) {
+        logger.info?.({
+          event: 'paperless_webhook_rejected',
+          httpStatus: 415,
+          reason: 'unsupported_content_type',
+        });
+        return reply.code(415).send({ message: 'Use JSON or form parameters for Paperless-ngx webhooks.' });
       }
-      const documentId = documentIdFrom(request.body);
+      const documentId = documentIdFrom(request.body, true);
       if (!documentId) {
+        logger.info?.({
+          event: 'paperless_webhook_rejected',
+          httpStatus: 400,
+          reason: 'invalid_document_id',
+          ...webhookRequestDiagnostics(request.body, contentType),
+        });
         return reply.code(400).send({ message: 'Provide a positive integer document_id.' });
       }
       const statement = await paperlessLifecycle.acceptPaperlessDocument(documentId);
+      logger.info?.({
+        event: 'paperless_webhook_accepted',
+        httpStatus: 202,
+        paperlessDocumentId: documentId,
+        statementId: statement.id,
+        statementStatus: statement.status,
+      });
       return reply.code(202).send({ statementId: statement.id, status: statement.status });
     });
 
@@ -312,7 +398,11 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         return reply.code(400).send({ message: 'Provide a parser ID.' });
       }
       try {
-        await controls.selectParser(parseId(request.params.statementId), request.body.parserId.trim());
+        await controls.selectParser(
+          parseId(request.params.statementId),
+          request.body.parserId.trim(),
+          request.body.confirm === true,
+        );
         return reply.code(202).send({ statementId: parseId(request.params.statementId), status: 'processing' });
       } catch (error) {
         return paperlessControlError(reply, error);
@@ -329,9 +419,6 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   }
 
   if (options.directUploads) {
-    if (options.parsers) {
-      app.get('/api/parsers', async () => ({ parsers: options.parsers }));
-    }
     app.post<{ Body: Buffer }>('/api/statements/upload', async (request, reply) => {
       const upload = parseMultipartUpload(request.headers['content-type'], request.body);
       if (!upload) return reply.code(400).send({ message: 'Provide one PDF file and a parser ID.' });
@@ -373,8 +460,15 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   }
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof Error && 'statusCode' in error && error.statusCode === 415) {
+      if (request.url === '/api/webhooks/paperless') {
+        logger.info?.({
+          event: 'paperless_webhook_rejected',
+          httpStatus: 415,
+          reason: 'unsupported_content_type',
+        });
+      }
       return reply.code(415).send({ message: 'Unsupported content type.' });
     }
     const failure = logFailure(logger, error, 'synchronization');
@@ -459,11 +553,19 @@ function paperlessControlError(reply: { code(statusCode: number): { send(payload
   const message = code === 'STATEMENT_NOT_FOUND' ? 'Statement not found.'
     : code === 'STATEMENT_READ_ONLY' ? 'Published statements cannot be changed.'
       : code === 'STATEMENT_NOT_PAPERLESS' ? 'This statement is not associated with Paperless-ngx.'
+        : code === 'PARSER_CHANGE_REQUIRES_CONFIRMATION' ? 'Changing the parser requires confirmation because review changes will be deleted.'
         : code === 'STATEMENT_NOT_RETRYABLE' ? 'Only statements with failed extraction can be retried.'
           : code === 'INVALID_PARSER' ? 'Select an available parser.'
             : error instanceof Error && error.message.startsWith('The statement') ? error.message
               : 'The Paperless-ngx operation could not be completed.';
   return reply.code(code === 'STATEMENT_NOT_FOUND' ? 404 : 400).send({ message });
+}
+
+function parserSettingsError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
+  if (!(error instanceof ParserSettingsError)) throw error;
+  return reply.code(400).send({
+    message: error.code === 'INVALID_PARSER' ? 'Select an available parser.' : 'Select a valid Paperless correspondent.',
+  });
 }
 
 function parseId(value: string): number {
@@ -474,12 +576,42 @@ function parseId(value: string): number {
   return parsed;
 }
 
-function documentIdFrom(value: unknown): number | undefined {
+function documentIdFrom(value: unknown, allowNumericString = false): number | undefined {
   if (!isRecord(value)) return undefined;
   const documentId = value.document_id ?? value.documentId;
-  return typeof documentId === 'number' && Number.isSafeInteger(documentId) && documentId > 0
-    ? documentId
+  if (typeof documentId === 'number') {
+    return Number.isSafeInteger(documentId) && documentId > 0 ? documentId : undefined;
+  }
+  if (allowNumericString && typeof documentId === 'string' && /^[1-9]\d*$/.test(documentId)) {
+    const parsed = Number(documentId);
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function webhookRequestDiagnostics(value: unknown, contentType: string | undefined): Record<string, unknown> {
+  const bodyKind = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  if (!isRecord(value)) return { bodyKind, contentType };
+
+  const candidate = value.document_id ?? value.documentId;
+  const documentIdType = candidate === null ? 'null' : Array.isArray(candidate) ? 'array' : typeof candidate;
+  const documentIdFormat = typeof candidate === 'string'
+    ? candidate.length === 0
+      ? 'empty'
+      : /^[1-9]\d*$/.test(candidate)
+        ? 'positive_digits'
+        : /^\{\{.*\}\}$/.test(candidate)
+          ? 'unrendered_template'
+          : 'other'
     : undefined;
+
+  return {
+    bodyKind,
+    bodyKeys: Object.keys(value).sort(),
+    contentType,
+    documentIdType,
+    ...(documentIdFormat ? { documentIdFormat } : {}),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -524,12 +656,25 @@ function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId
   return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
 }
 
-function validateCategorizationRule(value: unknown): { categoryId: string; descriptionContains: string; parserId: string | null } {
-  if (!isRecord(value) || typeof value.categoryId !== 'string' || typeof value.descriptionContains !== 'string'
+function validateCategoryGroupCreation(value: unknown): { confirmed: boolean; name: string } {
+  if (!isRecord(value) || typeof value.confirmed !== 'boolean' || typeof value.name !== 'string') {
+    throw new CategoryCreationError('INVALID_CATEGORY_GROUP_NAME');
+  }
+  return { confirmed: value.confirmed, name: value.name };
+}
+
+function validateCategorizationRule(value: unknown): { categoryId: string | null; descriptionContains: string; excluded: boolean | null; parserId: string | null } {
+  if (!isRecord(value) || ('categoryId' in value && value.categoryId !== null && typeof value.categoryId !== 'string') || typeof value.descriptionContains !== 'string'
+    || ('excluded' in value && value.excluded !== null && typeof value.excluded !== 'boolean')
     || ('parserId' in value && value.parserId !== null && typeof value.parserId !== 'string')) {
     throw new CategorizationRuleError('INVALID_MATCH_TEXT');
   }
-  return { categoryId: value.categoryId, descriptionContains: value.descriptionContains, parserId: value.parserId as string | null ?? null };
+  return {
+    categoryId: value.categoryId as string | null | undefined ?? null,
+    descriptionContains: value.descriptionContains,
+    excluded: value.excluded as boolean | null | undefined ?? null,
+    parserId: value.parserId as string | null ?? null,
+  };
 }
 
 function validateRuleOrder(value: unknown): number[] {
@@ -542,9 +687,13 @@ function validateRuleOrder(value: unknown): number[] {
 function categorizationRuleError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
   if (!(error instanceof CategorizationRuleError)) throw error;
   const message = error.code === 'RULE_NOT_FOUND'
-    ? 'Categorization rule not found.'
+    ? 'Transaction rule not found.'
     : error.code === 'INVALID_CATEGORY'
       ? 'Select a valid category.'
+      : error.code === 'INVALID_INCLUSION_ACTION'
+        ? 'Select whether matching transactions should be included, excluded, or left unchanged.'
+        : error.code === 'INVALID_RULE_ACTION'
+          ? 'Select a category or an inclusion action.'
       : error.code === 'INVALID_RULE_ORDER'
         ? 'Provide every saved rule once in the requested order.'
         : 'Provide matching text that contains at least one non-whitespace character.';

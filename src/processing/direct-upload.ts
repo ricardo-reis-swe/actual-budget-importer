@@ -158,10 +158,10 @@ export class DirectUploadProcessor {
         parser.parse(pdf),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('PDF extraction timed out.')), this.extractionTimeoutMs)),
       ]);
-      const categorizedTransactions = await Promise.all(transactions.map(async (row) => ({
-        ...row,
-        categoryId: await this.categorizationRules?.match(row.description, parser.id) ?? null,
-      })));
+      const categorizedTransactions = await Promise.all(transactions.map(async (row) => {
+        const rule = await this.categorizationRules?.match(row.description, parser.id);
+        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false };
+      }));
       await this.database.transaction().execute(async (transaction) => {
         const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
           .where('id', '=', statementId).executeTakeFirst();
@@ -174,7 +174,7 @@ export class DirectUploadProcessor {
             date: row.date,
             description: row.description,
             amount_cents: row.amountCents,
-            excluded: 0,
+            excluded: row.excluded ? 1 : 0,
             stable_import_id: randomUUID(),
           }))).execute();
         }

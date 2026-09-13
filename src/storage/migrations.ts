@@ -19,14 +19,20 @@ export interface DatabaseSchema {
   };
   categorization_rules: {
     category_id: string;
+    category_enabled: number;
     created_at: string;
     description_contains: string;
     id: Generated<number>;
+    inclusion_action: string | null;
     parser_id: string | null;
     position: number;
   };
   paperless_parser_mappings: {
     correspondent_id: number;
+    parser_id: string;
+  };
+  parser_settings: {
+    enabled: number;
     parser_id: string;
   };
   publication_records: {
@@ -186,6 +192,30 @@ const migrations: Migration[] = [
       await database.schema
         .alterTable('categorization_rules')
         .addColumn('parser_id', 'text')
+        .execute();
+    },
+  },
+  {
+    name: '005_parser_settings',
+    async up(database) {
+      await database.schema
+        .createTable('parser_settings')
+        .ifNotExists()
+        .addColumn('parser_id', 'text', (column) => column.primaryKey())
+        .addColumn('enabled', 'integer', (column) => column.notNull().defaultTo(1))
+        .execute();
+    },
+  },
+  {
+    name: '006_rule_inclusion_action',
+    async up(database) {
+      await database.schema
+        .alterTable('categorization_rules')
+        .addColumn('category_enabled', 'integer', (column) => column.notNull().defaultTo(1))
+        .execute();
+      await database.schema
+        .alterTable('categorization_rules')
+        .addColumn('inclusion_action', 'text')
         .execute();
     },
   },

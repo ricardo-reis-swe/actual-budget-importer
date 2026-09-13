@@ -98,11 +98,49 @@ button:disabled {
 }
 .button-link {
     border-radius: 0.6rem;
+    border: 0;
     background: #4967d8;
     color: white;
     padding: 0.5rem 0.75rem;
     font-weight: 700;
     text-decoration: none;
+}
+.header-modal-backdrop {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    background: #13213a66;
+    padding: 1rem;
+}
+.header-modal {
+    position: relative;
+    width: min(100%, 68rem);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    border: 1px solid #c7d2fe;
+    border-radius: 0.9rem;
+    background: #f5f7fb;
+    box-shadow: 0 12px 30px #263b6840;
+}
+.header-modal > main {
+    width: 100%;
+    padding: 1.25rem 3.75rem 2rem 1.25rem;
+}
+.header-modal-close {
+    position: absolute;
+    z-index: 1;
+    top: 0.8rem;
+    right: 0.8rem;
+    display: grid;
+    width: 2.25rem;
+    height: 2.25rem;
+    place-items: center;
+    padding: 0;
+    font-size: 1.5rem;
+    line-height: 1;
 }
 .rules-list {
     display: grid;
@@ -242,6 +280,7 @@ section[aria-labelledby] {
     min-width: 0;
     flex: 1;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.75rem;
     color: inherit;
     text-decoration: none;
@@ -274,16 +313,14 @@ section[aria-labelledby] {
 .statement-card-heading {
     color: #1e3a8a;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font-weight: 750;
 }
 .statement-card-meta {
-    flex: 0 0 auto;
+    min-width: 0;
     color: #64748b;
     font-size: 0.88rem;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 form {
     display: flex;
@@ -337,6 +374,87 @@ form button {
 .review-context {
     margin: 0.35rem 0 0;
     color: #64748b;
+}
+.page-heading {
+    margin: 0.75rem 0 1.5rem;
+}
+.page-heading h1 {
+    margin: 0;
+    color: #13213a;
+    font-size: clamp(1.8rem, 4vw, 2.7rem);
+}
+.page-heading p:last-child,
+.settings-panel > p,
+.parser-assignment p {
+    margin: 0.25rem 0 0;
+    color: #64748b;
+}
+.settings-panel,
+.parser-assignment {
+    border: 1px solid #dbe3f0;
+    border-radius: 0.9rem;
+    background: #fff;
+    padding: 1rem;
+}
+.settings-panel h2,
+.parser-assignment h2 {
+    margin: 0;
+}
+.settings-list {
+    display: grid;
+    gap: 0;
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+}
+.settings-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-top: 1px solid #eef2f7;
+    padding: 0.8rem 0;
+}
+.settings-list li > span {
+    display: flex;
+    flex-direction: column;
+}
+.settings-list small {
+    color: #64748b;
+}
+.settings-list label,
+.parser-assignment label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+.settings-list select,
+.parser-assignment select,
+.parser-assignment input {
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: white;
+    padding: 0.5rem 0.65rem;
+}
+.toggle-label input {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+.parser-assignment {
+    display: flex;
+    align-items: end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.parser-assignment > div {
+    min-width: 15rem;
+    flex: 1;
+}
+.parser-assignment > p[role="alert"] {
+    width: 100%;
 }
 .status-pill {
     border-radius: 999px;
@@ -538,10 +656,25 @@ form button {
 .rule-dialog form label {
     min-width: 0;
 }
+.rule-dialog .rule-apply-to-statement {
+    flex-direction: row;
+    align-items: center;
+    font-weight: 650;
+}
+.rule-apply-to-statement input {
+    width: 1.1rem;
+    height: 1.1rem;
+    margin: 0;
+}
 .dialog-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.5rem;
+}
+.dialog-actions button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 .secondary-button {
     border: 1px solid #cbd5e1;
@@ -574,6 +707,15 @@ form button {
     .review-summary {
         grid-template-columns: 1fr;
     }
+    .header-modal-backdrop {
+        padding: 0.5rem;
+    }
+    .header-modal {
+        max-height: calc(100vh - 1rem);
+    }
+    .header-modal > main {
+        padding: 1rem 3.25rem 1.5rem 1rem;
+    }
 }
 .connection-status {
     font-size: 0.9rem;
@@ -584,4 +726,30 @@ form button {
 }
 .connection-status-error {
     color: #b54747;
+}
+.connection-status-loading {
+    display: flex;
+    align-items: center;
+    height: 1.35rem;
+}
+.connection-status-skeleton {
+    width: 12.5rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: connection-status-loading 1.4s ease-in-out infinite;
+}
+@keyframes connection-status-loading {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .connection-status-skeleton {
+        animation: none;
+    }
 }

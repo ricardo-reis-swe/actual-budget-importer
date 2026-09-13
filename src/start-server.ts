@@ -15,6 +15,7 @@ import { PaperlessStatementProcessor } from './processing/paperless-statement-pr
 import { StatementLifecycle } from './processing/statement-lifecycle.js';
 import { activoBankParser } from './parsers/activobank-parser.js';
 import { wizinkParser } from './parsers/wizink-parser.js';
+import { ParserSettings } from './parsers/parser-settings.js';
 
 if (existsSync('.env')) {
   process.loadEnvFile('.env');
@@ -24,10 +25,12 @@ const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
 await database.migrate();
 const parsers = [activoBankParser, wizinkParser] as const;
+const paperlessClient = configuration.paperless ? new PaperlessClient(configuration.paperless) : undefined;
+const parserSettings = new ParserSettings(database.db, parsers, paperlessClient);
 const categorizationRules = new CategorizationRules(database.db);
 const directUploads = new DirectUploadProcessor(database.db, parsers, configuration.maximumPdfSizeBytes, undefined, categorizationRules, configuration.extractionTimeoutMs);
 const paperlessProcessor = configuration.paperless
-  ? new PaperlessStatementProcessor(database.db, new PaperlessClient(configuration.paperless), parsers, undefined, categorizationRules)
+  ? new PaperlessStatementProcessor(database.db, paperlessClient!, parsers, undefined, categorizationRules)
   : undefined;
 const paperlessLifecycle = configuration.paperless
   ? new StatementLifecycle(
@@ -51,8 +54,9 @@ const app = buildServer({
   categorizationRules,
   categorySource: actualBudget,
   parsers,
+  parserSettings,
   publisher,
-  statements: new StatementManagement(database.db),
+  statements: new StatementManagement(database.db, undefined, paperlessClient),
 });
 await categoryCatalog.refresh(actualBudget).catch(() => undefined);
 await app.listen({ host: '0.0.0.0', port: configuration.port });

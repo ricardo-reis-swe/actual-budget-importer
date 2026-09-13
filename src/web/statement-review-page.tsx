@@ -20,8 +20,10 @@ interface StatementDetail {
   status: string;
   transactions: StatementTransaction[];
   parserId: string | null;
-  paperless: { correspondentName: string | null; documentDate: string | null };
+  paperless: { correspondentName: string | null; documentDate: string | null; documentId: number | null };
 }
+
+interface ParserOption { id: string; name: string }
 
 interface ReviewDraft {
   actualCategoryId: string;
@@ -87,12 +89,19 @@ export function StatementReviewPage() {
   const [ruleTransactionId, setRuleTransactionId] = useState<number>();
   const [ruleDescription, setRuleDescription] = useState('');
   const [ruleCategoryId, setRuleCategoryId] = useState('');
+  const [ruleInclusion, setRuleInclusion] = useState('');
   const [ruleParserId, setRuleParserId] = useState('');
+  const [applyRuleToStatement, setApplyRuleToStatement] = useState(true);
   const [error, setError] = useState<string>();
   const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isApplyingRules, setIsApplyingRules] = useState(false);
   const [rulesFeedback, setRulesFeedback] = useState('');
+  const [parsers, setParsers] = useState<ParserOption[]>([]);
+  const [selectedParserId, setSelectedParserId] = useState('');
+  const [parserFile, setParserFile] = useState<File>();
+  const [isChangingParser, setIsChangingParser] = useState(false);
+  const [parserError, setParserError] = useState<string>();
 
   useEffect(() => {
     const statementId = new URLSearchParams(window.location.search).get('statementId');
@@ -103,6 +112,9 @@ export function StatementReviewPage() {
     void fetch('/api/categories')
       .then(async (response) => response.ok ? response.json() as Promise<{ groups: CategoryGroup[] }> : { groups: [] })
       .then((loaded) => setCategoryGroups(loaded.groups));
+    void fetch('/api/parsers')
+      .then(async (response) => response.ok ? response.json() as Promise<{ parsers: ParserOption[] }> : { parsers: [] })
+      .then((loaded) => setParsers(loaded.parsers));
     void fetch(`/api/statements/${encodeURIComponent(statementId)}`)
       .then(async (response) => {
         if (!response.ok) throw new Error('The statement could not be loaded.');
@@ -110,6 +122,7 @@ export function StatementReviewPage() {
       })
       .then((loaded) => {
         setStatement(loaded);
+        setSelectedParserId(loaded.parserId ?? '');
         setDrafts(Object.fromEntries(loaded.transactions.map((transaction) => [transaction.id, toDraft(transaction)])));
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The statement could not be loaded.'));
@@ -148,6 +161,8 @@ export function StatementReviewPage() {
     setRuleDescription(drafts[transaction.id]!.description);
     setRuleCategoryId(drafts[transaction.id]!.actualCategoryId);
     setRuleParserId('');
+    setRuleInclusion('');
+    setApplyRuleToStatement(true);
     setError(undefined);
   };
 
@@ -163,7 +178,7 @@ export function StatementReviewPage() {
       setDrafts(Object.fromEntries(result.statement.transactions.map((transaction) => [transaction.id, toDraft(transaction)])));
       setRulesFeedback(result.appliedCount > 0
         ? `Rules applied to ${result.appliedCount} ${result.appliedCount === 1 ? 'transaction' : 'transactions'}.`
-        : 'Nothing changed — no uncategorized transactions matched your rules.');
+        : 'Nothing changed — no transactions needed updates from your rules.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Rules could not be applied.');
     } finally {
@@ -174,17 +189,27 @@ export function StatementReviewPage() {
   const addRule = (applyToStatement: boolean) => {
     const transaction = statement?.transactions.find((item) => item.id === ruleTransactionId);
     if (!transaction) return;
-    if (!ruleDescription.trim() || !ruleCategoryId) return;
-    void fetch('/api/categorization-rules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ categoryId: ruleCategoryId, descriptionContains: ruleDescription.trim(), parserId: ruleParserId || null }) })
+    if (!ruleDescription.trim() || (!ruleCategoryId && !ruleInclusion)) return;
+    const excluded = ruleInclusion === 'exclude' ? true : ruleInclusion === 'include' ? false : null;
+    void fetch('/api/categorization-rules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ categoryId: ruleCategoryId || null, descriptionContains: ruleDescription.trim(), excluded, parserId: ruleParserId || null }) })
       .then(async (response) => {
-        if (!response.ok) throw new Error('The categorization rule could not be added.');
+        if (!response.ok) throw new Error('The transaction rule could not be added.');
         const current = statement?.transactions.find((item) => item.id === ruleTransactionId);
         if (current && statement) {
-          const updatedDraft = { ...drafts[current.id]!, actualCategoryId: ruleCategoryId };
+          const updatedDraft = {
+            ...drafts[current.id]!,
+            ...(ruleCategoryId ? { actualCategoryId: ruleCategoryId } : {}),
+            ...(excluded === null ? {} : { excluded }),
+          };
           const update = reviewUpdate(current, updatedDraft);
           if (Object.keys(update).length > 0) {
             const saved = await fetch(`/api/statements/${statement.id}/transactions/${current.id}`, { body: JSON.stringify(update), headers: { 'content-type': 'application/json' }, method: 'PATCH' });
-            if (!saved.ok) throw new Error('The transaction category could not be saved.');
+            if (!saved.ok) throw new Error('The transaction rule effects could not be saved.');
+            const savedTransaction = await saved.json() as StatementTransaction;
+            setStatement((currentStatement) => currentStatement && {
+              ...currentStatement,
+              transactions: currentStatement.transactions.map((item) => item.id === savedTransaction.id ? savedTransaction : item),
+            });
           }
           setDrafts((currentDrafts) => ({ ...currentDrafts, [current.id]: updatedDraft }));
         }
@@ -192,9 +217,11 @@ export function StatementReviewPage() {
         setRuleTransactionId(undefined);
         setRuleDescription('');
         setRuleCategoryId('');
+        setRuleInclusion('');
         setRuleParserId('');
+        setApplyRuleToStatement(true);
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The categorization rule could not be added.'));
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The transaction rule could not be added.'));
   };
 
   const publish = () => {
@@ -221,6 +248,37 @@ export function StatementReviewPage() {
     saveInline(transaction, updatedDraft);
   };
 
+  const changeParser = async () => {
+    if (!selectedParserId || selectedParserId === statement.parserId) return;
+    const isInitialSelection = statement.parserId === null && statement.transactions.length === 0;
+    if (!isInitialSelection && !window.confirm('Changing the parser permanently deletes all extracted transactions and review changes for this statement. Continue?')) return;
+    setIsChangingParser(true);
+    setParserError(undefined);
+    try {
+      let response: Response;
+      if (statement.paperless.documentId !== null) {
+        response = await fetch(`/api/statements/${statement.id}/paperless/parser`, {
+          body: JSON.stringify({ confirm: !isInitialSelection, parserId: selectedParserId }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        });
+      } else {
+        if (!parserFile) throw new Error('Select the original PDF before changing this parser.');
+        const form = new FormData();
+        form.append('parserId', selectedParserId);
+        form.append('confirm', 'true');
+        form.append('file', parserFile);
+        response = await fetch(`/api/statements/${statement.id}/parser`, { body: form, method: 'POST' });
+      }
+      const result = response.status === 204 ? undefined : await response.json() as { message?: string; status?: string };
+      if (!response.ok) throw new Error(result?.message ?? 'The parser could not be changed.');
+      window.location.reload();
+    } catch (cause) {
+      setParserError(cause instanceof Error ? cause.message : 'The parser could not be changed.');
+      setIsChangingParser(false);
+    }
+  };
+
   return <main className="review-page">
     <a className="back-link" href="/">← Back to statements</a>
     <header className="review-header">
@@ -231,6 +289,17 @@ export function StatementReviewPage() {
     </header>
     {statement.errorMessage && <p role="alert">{statement.errorMessage}</p>}
     {readOnly && <p role="status">This statement has been published and is read-only.</p>}
+    {!readOnly && <section className="parser-assignment" aria-labelledby="statement-parser-heading">
+      <div><h2 id="statement-parser-heading">Statement parser</h2><p>{statement.parserId ? 'Choose another parser to re-extract this statement.' : 'Choose a parser to extract this Paperless-ngx statement.'}</p></div>
+      <label>Parser<select value={selectedParserId} onChange={(event) => { setSelectedParserId(event.target.value); setParserError(undefined); }}>
+        <option value="">Select a parser</option>
+        {statement.parserId && !parsers.some((parser) => parser.id === statement.parserId) && <option value={statement.parserId}>{statement.parserId} (hidden)</option>}
+        {parsers.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}</option>)}
+      </select></label>
+      {statement.paperless.documentId === null && selectedParserId !== statement.parserId && <label>Original PDF<input type="file" accept="application/pdf,.pdf" onChange={(event) => setParserFile(event.target.files?.[0])} /></label>}
+      <button type="button" disabled={!selectedParserId || selectedParserId === statement.parserId || isChangingParser} onClick={() => void changeParser()}>{isChangingParser ? 'Changing parser…' : statement.parserId ? 'Change parser' : 'Use parser'}</button>
+      {parserError && <p role="alert">{parserError}</p>}
+    </section>}
     <section className="review-summary" aria-label="Review summary"><div><strong>{statement.transactions.length}</strong><span>Transactions</span></div><div><strong>{statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded).length}</strong><span>Included</span></div><div><strong>{formatCents(totalCents(statement, drafts))}</strong><span>Included total</span></div></section>
     <div className="review-actions">{!readOnly && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={publish} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}</div>
     {rulesFeedback && <p className="rules-feedback" role="status">{rulesFeedback}</p>}
@@ -251,10 +320,10 @@ export function StatementReviewPage() {
             const updatedDraft = { ...draft, excluded: !draft.excluded };
             setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
             saveInline(transaction, updatedDraft);
-          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button type="button" title="Add categorization rule" aria-label="Add categorization rule" onClick={() => openRuleDialog(transaction)}>＋</button></>}</td>
+          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button type="button" title="Add transaction rule" aria-label="Add transaction rule" onClick={() => openRuleDialog(transaction)}>＋</button></>}</td>
         </tr>;
       })}</tbody>
     </table></div>
-    {ruleTransactionId && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-dialog-title"><h2 id="rule-dialog-title">Create categorization rule</h2><p>New transactions whose description contains this text will use the selected category.</p><form onSubmit={(event) => { event.preventDefault(); addRule(false); }}><label htmlFor="rule-description">Description contains<input autoFocus id="rule-description" value={ruleDescription} onChange={(event) => setRuleDescription(event.target.value)} /></label><label htmlFor="rule-category">Category<select id="rule-category" value={ruleCategoryId} onChange={(event) => setRuleCategoryId(event.target.value)}><option value="">Select a category</option>{categoryGroups.filter((group) => !group.deleted).map((group) => <optgroup key={group.id} label={group.name}>{group.categories.filter((category) => !category.deleted).map((category) => <option key={category.id} value={category.id}>{category.name}{category.hidden ? ' (hidden)' : ''}</option>)}</optgroup>)}</select></label><label htmlFor="rule-scope">Apply rule to<select id="rule-scope" value={ruleParserId} onChange={(event) => setRuleParserId(event.target.value)}><option value="">All statements</option>{statement.parserId && <option value={statement.parserId}>Only {statement.parserId} statements</option>}</select></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setRuleTransactionId(undefined); setRuleDescription(''); setRuleCategoryId(''); setRuleParserId(''); }}>Cancel</button><button type="submit" disabled={!ruleDescription.trim() || !ruleCategoryId}>Create rule</button><button type="button" disabled={!ruleDescription.trim() || !ruleCategoryId} onClick={() => addRule(true)}>Create and apply to this statement</button></div></form></section></div>}
+    {ruleTransactionId && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-dialog-title"><h2 id="rule-dialog-title">Create transaction rule</h2><p>Choose what should happen when a transaction description contains this text.</p><form onSubmit={(event) => { event.preventDefault(); addRule(applyRuleToStatement); }}><label htmlFor="rule-description">Description contains<input autoFocus id="rule-description" value={ruleDescription} onChange={(event) => setRuleDescription(event.target.value)} /></label><label htmlFor="rule-category">Category<select id="rule-category" value={ruleCategoryId} onChange={(event) => setRuleCategoryId(event.target.value)}><option value="">Leave category unchanged</option>{categoryGroups.filter((group) => !group.deleted).map((group) => <optgroup key={group.id} label={group.name}>{group.categories.filter((category) => !category.deleted).map((category) => <option key={category.id} value={category.id}>{category.name}{category.hidden ? ' (hidden)' : ''}</option>)}</optgroup>)}</select></label><label htmlFor="rule-inclusion">Publishing<select id="rule-inclusion" value={ruleInclusion} onChange={(event) => setRuleInclusion(event.target.value)}><option value="">Leave inclusion unchanged</option><option value="include">Include transaction</option><option value="exclude">Exclude transaction</option></select></label><label htmlFor="rule-scope">Apply rule to<select id="rule-scope" value={ruleParserId} onChange={(event) => setRuleParserId(event.target.value)}><option value="">All statements</option>{statement.parserId && <option value={statement.parserId}>Only {statement.parserId} statements</option>}</select></label><label className="rule-apply-to-statement"><input type="checkbox" checked={applyRuleToStatement} onChange={(event) => setApplyRuleToStatement(event.target.checked)} />Run new rule on the entire statement</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setRuleTransactionId(undefined); setRuleDescription(''); setRuleCategoryId(''); setRuleInclusion(''); setRuleParserId(''); setApplyRuleToStatement(true); }}>Cancel</button><button type="submit" disabled={!ruleDescription.trim() || (!ruleCategoryId && !ruleInclusion)}>Create rule</button></div></form></section></div>}
   </main>;
 }

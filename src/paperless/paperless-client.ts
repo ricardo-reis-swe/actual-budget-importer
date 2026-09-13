@@ -35,7 +35,26 @@ export class PaperlessClient {
     } catch {
       throw new PaperlessClientError();
     }
-    return parseDocument(documentId, body);
+    const document = parseDocument(documentId, body);
+    if (document.correspondentId !== null && document.correspondentName === null) {
+      return { ...document, correspondentName: await this.getCorrespondentName(document.correspondentId) };
+    }
+    return document;
+  }
+
+  async getCorrespondentName(correspondentId: number): Promise<string> {
+    if (!Number.isSafeInteger(correspondentId) || correspondentId < 1) throw new PaperlessClientError();
+    const response = await this.requestUrl(this.apiUrl(`correspondents/${correspondentId}/`));
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new PaperlessClientError();
+    }
+    if (!isRecord(body) || body.id !== correspondentId || optionalString(body.name) === null) {
+      throw new PaperlessClientError();
+    }
+    return optionalString(body.name)!;
   }
 
   async getOriginalPdf(documentId: number): Promise<Uint8Array> {
@@ -47,9 +66,13 @@ export class PaperlessClient {
     if (!Number.isSafeInteger(documentId) || documentId < 1) {
       throw new PaperlessClientError();
     }
+    return this.requestUrl(this.documentUrl(documentId, suffix));
+  }
+
+  private async requestUrl(url: URL): Promise<Response> {
     let response: Response;
     try {
-      response = await this.fetch(this.documentUrl(documentId, suffix), {
+      response = await this.fetch(url, {
         headers: { Authorization: `Token ${this.configuration.apiToken}` },
       });
     } catch {
@@ -60,10 +83,17 @@ export class PaperlessClient {
   }
 
   private documentUrl(documentId: number, suffix: string): URL {
-    const root = new URL(this.configuration.serverUrl);
+    const root = this.apiUrl(`documents/${documentId}/`);
     const [path, query] = suffix.split('?', 2);
-    root.pathname = `${root.pathname.replace(/\/$/, '')}/api/documents/${documentId}/${path}`;
+    root.pathname = `${root.pathname}${path}`;
     root.search = query ? `?${query}` : '';
+    return root;
+  }
+
+  private apiUrl(path: string): URL {
+    const root = new URL(this.configuration.serverUrl);
+    root.pathname = `${root.pathname.replace(/\/$/, '')}/api/${path}`;
+    root.search = '';
     return root;
   }
 }

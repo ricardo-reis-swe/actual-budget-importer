@@ -61,25 +61,25 @@ export class CategoryCatalog {
   }
 
   async list(): Promise<ActualCategoryGroup[]> {
-    const rows = await this.database.selectFrom('actual_categories')
-      .innerJoin('actual_category_groups', 'actual_category_groups.id', 'actual_categories.group_id')
-      .select([
-        'actual_category_groups.id as group_id',
-        'actual_category_groups.name as group_name',
-        'actual_category_groups.deleted as group_deleted',
-        'actual_categories.id',
-        'actual_categories.name',
-        'actual_categories.hidden',
-        'actual_categories.deleted',
-      ]).orderBy('actual_category_groups.name').orderBy('actual_categories.name').execute();
+    const groupRows = await this.database.selectFrom('actual_category_groups')
+      .selectAll().orderBy('name').execute();
+    const categoryRows = await this.database.selectFrom('actual_categories')
+      .selectAll().orderBy('name').execute();
     const used = new Set((await this.database.selectFrom('statement_transactions').select('actual_category_id').where('actual_category_id', 'is not', null).execute())
       .map((row) => row.actual_category_id));
     const groups = new Map<string, ActualCategoryGroup>();
-    for (const row of rows) {
+    for (const row of groupRows) {
+      if (row.deleted === 0) {
+        groups.set(row.id, { id: row.id, name: row.name, deleted: false, categories: [] });
+      }
+    }
+    for (const row of categoryRows) {
       if (row.deleted === 1 && !used.has(row.id)) continue;
-      const group = groups.get(row.group_id) ?? { id: row.group_id, name: row.group_name, deleted: row.group_deleted === 1, categories: [] };
+      const groupRow = groupRows.find((group) => group.id === row.group_id);
+      if (!groupRow) continue;
+      const group = groups.get(row.group_id) ?? { id: groupRow.id, name: groupRow.name, deleted: groupRow.deleted === 1, categories: [] };
       group.categories.push({ id: row.id, name: row.name, groupId: row.group_id, hidden: row.hidden === 1, deleted: row.deleted === 1 });
-      groups.set(row.group_id, group);
+      groups.set(group.id, group);
     }
     return [...groups.values()];
   }
