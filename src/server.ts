@@ -1,4 +1,7 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import { readFile, stat } from 'node:fs/promises';
+import { extname, resolve, sep } from 'node:path';
+
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import {
   createSanitizedFailure,
@@ -54,6 +57,7 @@ export interface ApplicationLogger {
 
 export interface ServerOptions {
   database: DatabaseHealth;
+  frontendDirectory?: string;
   logger?: ApplicationLogger;
   directUploads?: DirectUploadProcessor;
   categoryCreation?: CategoryCreation;
@@ -460,6 +464,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   }
 
+  if (options.frontendDirectory) {
+    registerFrontend(app, options.frontendDirectory);
+  }
+
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof Error && 'statusCode' in error && error.statusCode === 415) {
       if (request.url === '/api/webhooks/paperless') {
@@ -476,6 +484,61 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   return app;
+}
+
+function registerFrontend(app: FastifyInstance, frontendDirectory: string): void {
+  const directory = resolve(frontendDirectory);
+  const serve = async (request: FastifyRequest, reply: FastifyReply) => {
+    const pathname = new URL(request.url, 'http://localhost').pathname;
+    if (pathname === '/api' || pathname.startsWith('/api/')) {
+      return reply.code(404).send({ message: 'Route not found.' });
+    }
+
+    const requestedFile = pathname === '/' ? 'index.html' : pathname.slice(1);
+    const file = resolve(directory, requestedFile);
+    const insideFrontendDirectory = file === directory || file.startsWith(`${directory}${sep}`);
+    const fallback = resolve(directory, 'index.html');
+
+    try {
+      if (!insideFrontendDirectory || !(await stat(file)).isFile()) {
+        if (extname(requestedFile)) return reply.code(404).send({ message: 'Not found.' });
+        return sendFrontendFile(reply, fallback);
+      }
+      return sendFrontendFile(reply, file);
+    } catch {
+      if (extname(requestedFile)) return reply.code(404).send({ message: 'Not found.' });
+      try {
+        return sendFrontendFile(reply, fallback);
+      } catch {
+        return reply.code(404).send({ message: 'Not found.' });
+      }
+    }
+  };
+
+  app.get('/', serve);
+  app.get('/*', serve);
+}
+
+async function sendFrontendFile(
+  reply: FastifyReply,
+  file: string,
+): Promise<FastifyReply> {
+  const contentType = frontendContentType(extname(file));
+  if (contentType) reply.header('content-type', contentType);
+  return reply.send(await readFile(file));
+}
+
+function frontendContentType(extension: string): string | undefined {
+  return {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.ico': 'image/x-icon',
+    '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+  }[extension];
 }
 
 function parseMultipartUpload(contentType: string | undefined, body: Buffer): { filename: string; parserId: string; pdf: Buffer } | undefined {

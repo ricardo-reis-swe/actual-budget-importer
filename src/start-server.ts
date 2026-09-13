@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { loadConfiguration } from './config.js';
 import { buildServer } from './server.js';
@@ -46,6 +47,7 @@ await publisher.recoverInterruptedPublishing();
 
 const app = buildServer({
   database,
+  frontendDirectory: resolve('dist'),
   directUploads,
   ...(paperlessLifecycle ? { paperlessLifecycle } : {}),
   ...(paperlessProcessor ? { paperlessControls: paperlessProcessor } : {}),

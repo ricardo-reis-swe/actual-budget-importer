@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,6 +52,30 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it('serves the built interface and falls back to it for browser routes', async () => {
+    const frontendDirectory = mkdtempSync(join(tmpdir(), 'actual-budget-importer-frontend-'));
+    writeFileSync(join(frontendDirectory, 'index.html'), '<!doctype html><title>Actual Budget Importer</title>');
+    writeFileSync(join(frontendDirectory, 'app.js'), 'console.log("synthetic");');
+    const app = buildServer({ database: { checkHealth: () => undefined }, frontendDirectory });
+
+    const root = await app.inject({ method: 'GET', url: '/' });
+    expect(root.statusCode).toBe(200);
+    expect(root.headers['content-type']).toContain('text/html');
+    expect(root.body).toContain('Actual Budget Importer');
+
+    const browserRoute = await app.inject({ method: 'GET', url: '/statements/42' });
+    expect(browserRoute.statusCode).toBe(200);
+    expect(browserRoute.body).toBe(root.body);
+
+    const asset = await app.inject({ method: 'GET', url: '/app.js' });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers['content-type']).toContain('text/javascript');
+
+    const missingAsset = await app.inject({ method: 'GET', url: '/missing.js' });
+    expect(missingAsset.statusCode).toBe(404);
+    await app.close();
+  });
+
   it('creates an exclusion-only rule through the API', async () => {
     const { app, database } = await createStatementServer();
 
