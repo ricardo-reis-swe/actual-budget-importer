@@ -13,21 +13,14 @@ the importer.
 
 ## Screenshots
 
-### Dashboard
-
-![Actual Budget Importer dashboard](docs/screenshots/home.png)
-
-### Statement review
-
-![Statement transaction review](docs/screenshots/statement.png)
-
-### Categorization rules
-
-![Categorization rule management](docs/screenshots/rules.png)
-
-### Categories
-
-![Actual Budget categories and category creation](docs/screenshots/group.png)
+<table>
+  <tr>
+    <td><a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" width="320" alt="Actual Budget Importer dashboard"></a><br><strong>Dashboard</strong></td>
+    <td><a href="docs/screenshots/statement.png"><img src="docs/screenshots/statement.png" width="320" alt="Statement transaction review"></a><br><strong>Statement review</strong></td>
+    <td><a href="docs/screenshots/rules.png"><img src="docs/screenshots/rules.png" width="320" alt="Categorization rule management"></a><br><strong>Categorization rules</strong></td>
+    <td><a href="docs/screenshots/group.png"><img src="docs/screenshots/group.png" width="320" alt="Actual Budget categories and category creation"></a><br><strong>Categories</strong></td>
+  </tr>
+</table>
 
 ## Quick start
 
