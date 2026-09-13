@@ -8,8 +8,7 @@ the importer.
 
 > [!IMPORTANT]
 > This app is designed for one user on a trusted internal network. Do not
-> expose it directly to the public internet, and never commit credentials or
-> real financial statements.
+> expose it directly to the public internet
 
 ## Screenshots
 
