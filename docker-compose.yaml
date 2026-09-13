@@ -1,0 +1,26 @@
+name: actual-budget-importer
+
+services:
+  actual-budget-importer:
+    build: .
+    image: actual-budget-importer:latest
+    container_name: actual-budget-importer
+    init: true
+    restart: unless-stopped
+    environment:
+      ACTUAL_SERVER_URL: https://actual.example.test # Required Actual Budget server URL.
+      ACTUAL_PASSWORD: change-me # Required Actual Budget server password.
+      ACTUAL_BUDGET_ID: replace-with-budget-sync-id # Required budget sync ID.
+      ACTUAL_ACCOUNT_ID: replace-with-destination-account-id # Required destination account ID.
+      ACTUAL_ENCRYPTION_PASSWORD: "" # (Optional) Budget encryption password.
+
+      APP_PORT: "3000" # (Optional) Application HTTP port.
+      MAX_PDF_SIZE_BYTES: "104857600" # (Optional) Maximum PDF size; defaults to 100 MiB.
+      EXTRACTION_TIMEOUT_MS: "300000" # (Optional) Extraction timeout; defaults to five minutes.
+
+      PAPERLESS_URL: "" # (Optional) Paperless-ngx URL; set with PAPERLESS_API_TOKEN.
+      PAPERLESS_API_TOKEN: "" # (Optional) Paperless-ngx token; set with PAPERLESS_URL.
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data

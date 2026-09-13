@@ -1,40 +1,94 @@
 # Actual Budget Importer
 
-Actual Budget Importer prepares ActivoBank and WiZink PDF statements for review, categorization, and explicit publishing to Actual Budget. It supports direct PDF uploads and optional Paperless-ngx webhook ingestion.
+Actual Budget Importer turns ActivoBank and WiZink PDF statements into
+reviewable transactions before you publish them to Actual Budget. Statements
+can be uploaded directly or received from Paperless-ngx. Categories are loaded
+from Actual Budget, and new category groups and categories can be created from
+the importer.
 
-## Run with Docker
+> [!IMPORTANT]
+> This app is designed for one user on a trusted internal network. Do not
+> expose it directly to the public internet, and never commit credentials or
+> real financial statements.
 
-Copy `.env.example` to `.env`, set the Actual Budget connection values, then run:
+## Screenshots
+
+### Dashboard
+
+![Actual Budget Importer dashboard](docs/screenshots/home.png)
+
+### Statement review
+
+![Statement transaction review](docs/screenshots/statement.png)
+
+### Categorization rules
+
+![Categorization rule management](docs/screenshots/rules.png)
+
+### Categories
+
+![Actual Budget categories and category creation](docs/screenshots/group.png)
+
+## Quick start
+
+Install Docker Compose, edit the placeholders in `docker-compose.yaml`, then
+run:
 
 ```sh
 docker compose up --build
 ```
 
-The web interface is available at `http://localhost:3000`. SQLite data is stored in the `actual-budget-importer-data` volume. Run only one application instance against a database.
+Open `http://localhost:3000`. The local `./data` directory keeps the SQLite
+database between runs. Run only one app instance against that database.
 
-## Configuration
+## `docker-compose.yaml`
 
-Required: `ACTUAL_SERVER_URL`, `ACTUAL_PASSWORD`, `ACTUAL_BUDGET_ID`, and `ACTUAL_ACCOUNT_ID`.
+```yaml
+name: actual-budget-importer
 
-`PAPERLESS_URL` and `PAPERLESS_API_TOKEN` are optional, but must be supplied together. `APP_DATA_DIRECTORY` and `APP_PORT` default to `./data` and `3000`.
+services:
+  actual-budget-importer:
+    build: .
+    image: actual-budget-importer:latest
+    container_name: actual-budget-importer
+    init: true
+    restart: unless-stopped
+    environment:
+      ACTUAL_SERVER_URL: https://actual.example.test # Required Actual Budget server URL.
+      ACTUAL_PASSWORD: change-me # Required Actual Budget server password.
+      ACTUAL_BUDGET_ID: replace-with-budget-sync-id # Required budget sync ID.
+      ACTUAL_ACCOUNT_ID: replace-with-destination-account-id # Required destination account ID.
+      ACTUAL_ENCRYPTION_PASSWORD: "" # (Optional) Budget encryption password.
 
-PDF processing defaults to a 100 MiB maximum (`MAX_PDF_SIZE_BYTES=104857600`) and a five-minute extraction timeout (`EXTRACTION_TIMEOUT_MS=300000`). These limits apply to direct uploads and Paperless-ngx PDFs.
+      APP_PORT: "3000" # (Optional) Application HTTP port.
+      MAX_PDF_SIZE_BYTES: "104857600" # (Optional) Maximum PDF size; defaults to 100 MiB.
+      EXTRACTION_TIMEOUT_MS: "300000" # (Optional) Extraction timeout; defaults to five minutes.
+
+      PAPERLESS_URL: "" # (Optional) Paperless-ngx URL; set with PAPERLESS_API_TOKEN.
+      PAPERLESS_API_TOKEN: "" # (Optional) Paperless-ngx token; set with PAPERLESS_URL.
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+```
+
+Paperless-ngx is optional. To enable it, set both `PAPERLESS_URL` and
+`PAPERLESS_API_TOKEN`. PDF processing defaults to a 100 MiB limit and a
+five-minute timeout; both can be changed in the Compose file.
 
 ## Development
 
-Requires Node.js 22+ and pnpm.
+Local development requires Node.js 22+ and pnpm:
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run typecheck
 pnpm test
 pnpm start:server
 ```
 
-`pnpm start:server` starts the API on port 3000 and the Vite interface on port 5173. Both listen on all network interfaces for local-network development. Use `pnpm start:api` to start only the API.
+The API runs on port 3000 and the Vite interface on port 5173.
 
-Use synthetic statements and mocked integrations in tests. Never commit credentials, real statements, or personal financial data.
+## License
 
-## Endpoints
-
-`GET /api/health` is a credential-free database health check. Direct uploads use `POST /api/statements/upload`; Paperless-ngx uses `POST /api/webhooks/paperless` with `{ "document_id": 123 }`.
+Licensed under the [GNU General Public License, version 3 or later](LICENSE).
