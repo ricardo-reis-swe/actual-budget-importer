@@ -34,6 +34,14 @@ docker compose up -d
 Open `http://localhost:3000`. The local `./data` directory keeps the SQLite
 database between runs. Run only one app instance against that database.
 
+### Data storage
+
+Actual Budget Importer stores its application data in SQLite. In the example
+Compose configuration, `./data` is mounted at `/data` in the container so the
+database survives container replacements. Back up this directory regularly,
+and do not run more than one importer instance against the same data
+directory.
+
 ## `docker-compose.yaml`
 
 ```yaml
@@ -72,6 +80,26 @@ Existing installations may keep `ACTUAL_ACCOUNT_ID` for one upgraded startup
 to associate historical published or failed statements with the formerly
 configured account, then remove it.
 
+## Paperless-ngx webhook setup
+
+After configuring the Paperless-ngx connection, create a Paperless-ngx
+workflow whose trigger identifies the statements you want to import, then add
+a **Webhook** action with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Webhook URL | `http://<actual-budget-importer-host>:3000/api/webhooks/paperless` |
+| Use parameters for webhook body | Yes |
+| Send webhook payload as JSON | No |
+| Webhook parameter | `document_id` = `{{ doc_id }}` |
+| Include document | No |
+
+Replace `<actual-budget-importer-host>` with the IP address or hostname of the
+machine running Actual Budget Importer. The webhook sends only the Paperless
+document ID; the importer retrieves the document and its metadata from
+Paperless-ngx. Do not use port `5173` for a deployed container: that port is
+used only by the Vite development interface.
+
 ## Development
 
 Local development requires Node.js 22+ and pnpm:
@@ -84,6 +112,28 @@ pnpm start:server
 ```
 
 The API runs on port 3000 and the Vite interface on port 5173.
+
+## Contributing
+
+### Developing a bank parser
+
+Bank parsers live in `src/parsers` and implement the `BankParser` interface in
+`src/parsers/bank-parser.ts`. Give each parser a stable, lowercase ID: it is
+stored with statements and used by saved rules and Paperless-ngx mappings.
+
+A parser receives PDF bytes in memory and returns transactions in the
+statement's original order. Every row must include a zero-based `position`, a
+`DD-MM-YYYY` date, a description, and a signed integer `amountCents` value.
+Negative amounts are outflows and positive amounts are inflows. Parsers must
+not access the database, credentials, Paperless-ngx, or Actual Budget.
+
+To add a parser:
+
+1. Add a parser module under `src/parsers` that implements `BankParser`.
+2. Register it in the `parsers` array in `src/start-server.ts`.
+3. Add regression tests and synthetic statement-layout fixtures under `test/`.
+   Do not commit real statements or other financial data.
+4. Run `pnpm run typecheck` and `pnpm test` before opening a pull request.
 
 ## License
 
