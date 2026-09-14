@@ -1,4 +1,8 @@
-FROM node:24-bookworm-slim AS build
+# syntax=docker/dockerfile:1
+
+ARG NODE_IMAGE=node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+
+FROM ${NODE_IMAGE} AS build
 
 RUN corepack enable \
   && apt-get update \
@@ -8,12 +12,15 @@ RUN corepack enable \
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=actual-budget-importer-pnpm,target=/root/.local/share/pnpm/store \
+  pnpm install --frozen-lockfile
 
-COPY . ./
+COPY index.html tsconfig.json vite.config.ts ./
+COPY src ./src
 RUN pnpm run build
+RUN pnpm prune --prod
 
-FROM node:24-bookworm-slim
+FROM ${NODE_IMAGE}
 
 ENV APP_DATA_DIRECTORY=/data \
   APP_PORT=3000 \
@@ -34,5 +41,8 @@ COPY --from=build --chown=app:app /app/dist ./dist
 USER app
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + process.env.APP_PORT + '/api/health').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
 CMD ["./node_modules/.bin/tsx", "src/start-server.ts"]

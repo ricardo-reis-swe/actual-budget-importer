@@ -187,6 +187,9 @@ importers:
       react-dom:
         specifier: ^19.1.1
         version: 19.3.0(react@19.3.0)
+      tsx:
+        specifier: ^4.20.5
+        version: 4.23.13
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^9.6.0
@@ -203,9 +206,6 @@ importers:
       node-gyp:
         specifier: ^13.0.2
         version: 13.0.2
-      tsx:
-        specifier: ^4.20.5
-        version: 4.23.13
       typescript:
         specifier: ^5.9.2
         version: 5.9.3

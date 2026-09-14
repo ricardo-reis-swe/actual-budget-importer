@@ -50,6 +50,7 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/data
+      # The container runs as a non-root user; ensure ./data is writable by it.
 ```
 
 Paperless-ngx is optional. To enable it, set both `PAPERLESS_URL` and
@@ -86,9 +87,10 @@ used only by the Vite development interface.
 
 Actual Budget Importer stores its application data in SQLite. In the example
 Compose configuration, `./data` is mounted at `/data` in the container so the
-database survives container replacements. Back up this directory regularly,
-and do not run more than one importer instance against the same data
-directory.
+database survives container replacements. The container runs as a non-root
+user, so ensure this host directory is writable by the container user. Back up
+this directory regularly, and do not run more than one importer instance
+against the same data directory.
 
 ## Development
 

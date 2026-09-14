@@ -22,3 +22,4 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/data
+      # The container runs as a non-root user; ensure ./data is writable by it.
