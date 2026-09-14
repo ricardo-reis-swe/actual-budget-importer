@@ -24,7 +24,7 @@ if (existsSync('.env')) {
 
 const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
-await database.migrate();
+await database.migrate(configuration.actualBudget.legacyAccountId);
 const parsers = [activoBankParser, wizinkParser] as const;
 const paperlessClient = configuration.paperless ? new PaperlessClient(configuration.paperless) : undefined;
 const parserSettings = new ParserSettings(database.db, parsers, paperlessClient);
@@ -55,6 +55,7 @@ const app = buildServer({
   categoryCreation: new CategoryCreation(actualBudget),
   categorizationRules,
   categorySource: actualBudget,
+  accountSource: actualBudget,
   parsers,
   parserSettings,
   publisher,

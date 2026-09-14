@@ -36,6 +36,8 @@ async function readyStatement(database: ApplicationDatabase): Promise<{ id: numb
 }
 
 describe('statement publishing', () => {
+  const destinationAccount = { id: 'account-1', name: 'Current account' };
+
   it('imports reviewed transactions, verifies them, synchronizes, and records publication', async () => {
     const database = await createDatabase();
     const statement = await readyStatement(database);
@@ -54,9 +56,9 @@ describe('statement publishing', () => {
     };
     const publisher = new StatementPublisher(database.db, actualBudget, () => new Date('2026-01-02T00:00:00.000Z'));
 
-    await publisher.publish(statement.id);
+    await publisher.publish(statement.id, destinationAccount);
 
-    expect(actualBudget.importTransactions).toHaveBeenCalledWith([expect.objectContaining({
+    expect(actualBudget.importTransactions).toHaveBeenCalledWith('account-1', [expect.objectContaining({
       amount: -1300,
       category: 'category-1',
       date: '2026-01-03',
@@ -65,9 +67,10 @@ describe('statement publishing', () => {
       payee_name: 'Reviewed grocer',
     })]);
     expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-1', expect.objectContaining({ category: 'category-1', payee: 'payee-1' }));
+    expect(actualBudget.findTransactions).toHaveBeenCalledWith('account-1', '2026-01-03', '2026-01-03');
     expect(actualBudget.synchronize).toHaveBeenCalledOnce();
-    await expect(database.db.selectFrom('statements').select('status').where('id', '=', statement.id).executeTakeFirstOrThrow())
-      .resolves.toEqual({ status: 'published' });
+    await expect(database.db.selectFrom('statements').select(['actual_account_id', 'actual_account_name', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow())
+      .resolves.toEqual({ actual_account_id: 'account-1', actual_account_name: 'Current account', status: 'published' });
     await expect(database.db.selectFrom('publication_records').selectAll().executeTakeFirstOrThrow())
       .resolves.toMatchObject({ actual_transaction_id: 'actual-1', statement_transaction_id: statement.transactionId });
     await database.close();
@@ -81,12 +84,30 @@ describe('statement publishing', () => {
       findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
     });
 
-    await expect(publisher.publish(statement.id)).rejects.toThrow('password=private');
+    await expect(publisher.publish(statement.id, destinationAccount)).rejects.toThrow('password=private');
 
     const saved = await database.db.selectFrom('statements').select(['diagnostic_id', 'error_message', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow();
     expect(saved.status).toBe('publish failed');
     expect(saved.error_message).not.toContain('private');
     expect(saved.diagnostic_id).toBeTruthy();
+    await database.close();
+  });
+
+  it('locks a failed publication to its first destination account', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    const actualBudget = {
+      importTransactions: vi.fn().mockRejectedValue(new Error('synthetic outage')),
+      findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
+    };
+    const publisher = new StatementPublisher(database.db, actualBudget);
+
+    await expect(publisher.publish(statement.id, destinationAccount)).rejects.toThrow('synthetic outage');
+    await expect(publisher.publish(statement.id, { id: 'account-2', name: 'Savings' }))
+      .rejects.toMatchObject({ code: 'ACCOUNT_MISMATCH' });
+    expect(actualBudget.importTransactions).toHaveBeenCalledOnce();
+    await expect(database.db.selectFrom('statements').select(['actual_account_id', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow())
+      .resolves.toEqual({ actual_account_id: 'account-1', status: 'publish failed' });
     await database.close();
   });
 
@@ -109,8 +130,8 @@ describe('statement publishing', () => {
       synchronize: vi.fn().mockResolvedValue(undefined),
       updateTransaction: vi.fn().mockResolvedValue(undefined),
     };
-    await new StatementPublisher(database.db, actualBudget).publish(statement.id);
-    expect(actualBudget.importTransactions).toHaveBeenCalledWith([expect.objectContaining({ imported_id: 'statement-1-transaction-1' })]);
+    await new StatementPublisher(database.db, actualBudget).publish(statement.id, destinationAccount);
+    expect(actualBudget.importTransactions).toHaveBeenCalledWith('account-1', [expect.objectContaining({ imported_id: 'statement-1-transaction-1' })]);
     expect(actualBudget.updateTransaction).toHaveBeenCalledOnce();
     await database.close();
   });
@@ -129,9 +150,9 @@ describe('statement publishing', () => {
       updateTransaction: vi.fn().mockResolvedValue(undefined),
     };
 
-    await new StatementPublisher(database.db, actualBudget).publish(statement.id);
+    await new StatementPublisher(database.db, actualBudget).publish(statement.id, destinationAccount);
 
-    expect(actualBudget.importTransactions).toHaveBeenCalledWith([expect.objectContaining({ date: '2026-08-16' })]);
+    expect(actualBudget.importTransactions).toHaveBeenCalledWith('account-1', [expect.objectContaining({ date: '2026-08-16' })]);
     expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-1', expect.objectContaining({ date: '2026-08-16' }));
     await database.close();
   });
@@ -171,9 +192,9 @@ describe('statement publishing', () => {
     const first = new StatementPublisher(database.db, actualBudget);
     const second = new StatementPublisher(database.db, actualBudget);
 
-    const firstPublish = first.publish(statement.id);
+    const firstPublish = first.publish(statement.id, destinationAccount);
     await importStarted;
-    await expect(second.publish(statement.id)).rejects.toMatchObject({ code: 'STATEMENT_BUSY' });
+    await expect(second.publish(statement.id, destinationAccount)).rejects.toMatchObject({ code: 'STATEMENT_BUSY' });
     await firstPublish;
 
     expect(actualBudget.importTransactions).toHaveBeenCalledOnce();

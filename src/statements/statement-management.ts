@@ -21,6 +21,7 @@ export interface StatementDetail extends Omit<StatementSummary,
   'dateRange' | 'paperlessCorrespondentName' | 'paperlessDocumentDate' | 'paperlessDocumentTitle' | 'transactionCount'> {
   diagnosticId: string | null;
   errorMessage: string | null;
+  actualAccount: { id: string; name: string | null } | null;
   paperless: {
     correspondentId: number | null;
     correspondentName: string | null;
@@ -139,6 +140,9 @@ export class StatementManagement {
       .execute();
 
     return {
+      actualAccount: statement.actual_account_id === null
+        ? null
+        : { id: statement.actual_account_id, name: statement.actual_account_name },
       createdAt: statement.created_at,
       diagnosticId: statement.diagnostic_id,
       errorMessage: statement.error_message,

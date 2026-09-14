@@ -79,7 +79,15 @@ people can use it.
 ## Publishing to Actual Budget
 
 - Publish sends the selected statement's reviewed transactions
-  and assigned categories to Actual Budget.
+  and assigned categories to an Actual Budget account selected by
+  the user in the publication confirmation.
+- Require the user to select an active destination account for the
+  statement's first publishing attempt; do not preselect an account.
+- Permanently associate the selected account with the statement when
+  publishing begins and show it on failed and published statements.
+- Retry a failed or interrupted publication only to its previously
+  selected account. Do not allow the account to be changed because
+  some transactions may already have reached that account.
 - A statement is marked as published only after its transactions
   have been successfully sent.
 - If publishing fails, show the failure and preserve the user's
@@ -274,7 +282,9 @@ people can use it.
 
 - Paperless-ngx is optional. When configured, the app connects
   to one Paperless-ngx instance.
-- The connection to one fixed Actual Budget account is required.
+- The connection to one Actual Budget budget file is required. Users
+  select the destination account separately for each statement when
+  publishing it.
 - When Paperless-ngx is configured, retrieve its correspondents
   and let the user map ActivoBank and WiZink to the appropriate
   correspondents.
@@ -441,8 +451,13 @@ people can use it.
 - Save pending review changes automatically and show whether
   they are saving, saved, or failed to save.
 - Before publishing, show a confirmation containing the included
-  and excluded transaction counts and separate inflow and
-  outflow totals.
+  and excluded transaction counts, separate inflow and outflow
+  totals, and the selected Actual Budget destination account.
+- Offer active on-budget and off-budget accounts for a statement's
+  first publication. Do not offer closed accounts.
+- If a statement already has a destination account because publishing
+  previously failed or was interrupted, show that account as locked
+  in the confirmation.
 - Disable editing and repeated Publish actions while publishing
   is in progress.
 

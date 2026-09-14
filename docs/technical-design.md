@@ -95,6 +95,15 @@
 ## Actual Budget publishing procedure
 
 - Integrate through the official `@actual-app/api` package.
+- Provide `GET /api/actual/accounts` to return the accounts in the
+  configured budget file for publication selection.
+- Require `POST /api/statements/:statementId/publish` to contain a
+  confirmed Actual Budget account ID.
+- Validate that a newly selected account exists and is not closed.
+- Atomically save the selected account ID and its name on the statement
+  when claiming its first publication attempt.
+- Pass the statement's saved account ID to transaction import and lookup
+  operations. Reject a different account on later attempts.
 - Import included transactions using their stable import
   identifiers and Actual Budget's reconciliation behavior.
 - Do not reimport a transaction that the user later deleted
@@ -186,14 +195,16 @@
 - Store category and inclusion effects independently on each
   saved rule. Preserve existing category-only rules when the
   schema is migrated.
+- Store the destination Actual Budget account ID and the account name at
+  selection time on each statement. Keep both nullable for historical
+  statements whose destination was not recorded.
 
 ## Application configuration
 
 - Configure the app through environment variables.
 - Configuration includes:
   - Optional Paperless-ngx URL and API token.
-  - Actual Budget server URL, password, budget ID, and
-    destination account ID.
+  - Actual Budget server URL, password, and budget ID.
   - Actual Budget encryption password when required.
   - Persistent data directory and application port.
 - Require both the Paperless-ngx URL and API token when enabling
@@ -202,6 +213,10 @@
   is missing or invalid.
 - Commit an example configuration containing placeholders only.
 - Never expose secrets in logs or API responses.
+- Accept `ACTUAL_ACCOUNT_ID` only as an optional upgrade aid for
+  associating existing published, publishing, or publish-failed statements
+  with the previously configured fixed account. Do not use it as a default
+  for new publications.
 
 ## Deployment
 

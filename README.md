@@ -49,7 +49,6 @@ services:
       ACTUAL_SERVER_URL: https://actual.example.test # Required Actual Budget server URL.
       ACTUAL_PASSWORD: change-me # Required Actual Budget server password.
       ACTUAL_BUDGET_ID: replace-with-budget-sync-id # Required budget sync ID.
-      ACTUAL_ACCOUNT_ID: replace-with-destination-account-id # Required destination account ID.
       ACTUAL_ENCRYPTION_PASSWORD: "" # (Optional) Budget encryption password.
 
       APP_PORT: "3000" # (Optional) Application HTTP port.
@@ -67,6 +66,11 @@ services:
 Paperless-ngx is optional. To enable it, set both `PAPERLESS_URL` and
 `PAPERLESS_API_TOKEN`. PDF processing defaults to a 100 MiB limit and a
 five-minute timeout; both can be changed in the Compose file.
+
+Choose the destination Actual Budget account when publishing each statement.
+Existing installations may keep `ACTUAL_ACCOUNT_ID` for one upgraded startup
+to associate historical published or failed statements with the formerly
+configured account, then remove it.
 
 ## Development
 

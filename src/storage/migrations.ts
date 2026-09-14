@@ -58,6 +58,8 @@ export interface DatabaseSchema {
     position: number;
   };
   statements: {
+    actual_account_id: string | null;
+    actual_account_name: string | null;
     content_hash: string | null;
     created_at: string;
     diagnostic_id: string | null;
@@ -216,6 +218,19 @@ const migrations: Migration[] = [
       await database.schema
         .alterTable('categorization_rules')
         .addColumn('inclusion_action', 'text')
+        .execute();
+    },
+  },
+  {
+    name: '007_statement_actual_account',
+    async up(database) {
+      await database.schema
+        .alterTable('statements')
+        .addColumn('actual_account_id', 'text')
+        .execute();
+      await database.schema
+        .alterTable('statements')
+        .addColumn('actual_account_name', 'text')
         .execute();
     },
   },

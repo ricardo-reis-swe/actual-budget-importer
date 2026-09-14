@@ -75,4 +75,25 @@ describe('application database', () => {
     expect(transaction).toMatchObject({ amount_cents: -1234, position: 0 });
     await database.close();
   });
+
+  it('uses the former configured account only to backfill existing publication attempts', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const timestamp = '2026-01-01T00:00:00.000Z';
+    await database.db.insertInto('statements').values([
+      { content_hash: 'published', status: 'published', created_at: timestamp, updated_at: timestamp },
+      { content_hash: 'failed', status: 'publish failed', created_at: timestamp, updated_at: timestamp },
+      { content_hash: 'ready', status: 'ready for review', created_at: timestamp, updated_at: timestamp },
+    ]).execute();
+
+    await database.migrate('legacy-account');
+
+    const statements = await database.db.selectFrom('statements').select(['actual_account_id', 'status']).orderBy('id').execute();
+    expect(statements).toEqual([
+      { actual_account_id: 'legacy-account', status: 'published' },
+      { actual_account_id: 'legacy-account', status: 'publish failed' },
+      { actual_account_id: null, status: 'ready for review' },
+    ]);
+    await database.close();
+  });
 });

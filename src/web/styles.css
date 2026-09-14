@@ -656,6 +656,26 @@ form button {
 .rule-dialog form label {
     min-width: 0;
 }
+.publish-summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    margin: 0;
+}
+.publish-summary div {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+}
+.publish-summary dt {
+    color: #64748b;
+    font-size: 0.8rem;
+}
+.publish-summary dd {
+    margin: 0;
+    color: #13213a;
+    font-weight: 750;
+}
 .rule-dialog .rule-apply-to-statement {
     flex-direction: row;
     align-items: center;

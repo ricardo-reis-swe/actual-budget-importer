@@ -18,15 +18,15 @@ export interface ActualTransaction {
 }
 
 export interface ActualBudgetPublisher {
-  importTransactions(transactions: Omit<ActualTransaction, 'id'>[]): Promise<void>;
-  findTransactions(startDate: string, endDate: string): Promise<ActualTransaction[]>;
+  importTransactions(accountId: string, transactions: Omit<ActualTransaction, 'id'>[]): Promise<void>;
+  findTransactions(accountId: string, startDate: string, endDate: string): Promise<ActualTransaction[]>;
   resolvePayee(name: string): Promise<string>;
   synchronize(): Promise<void>;
   updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void>;
 }
 
 export class StatementPublicationError extends Error {
-  constructor(readonly code: 'STATEMENT_BUSY' | 'STATEMENT_NOT_FOUND' | 'STATEMENT_NOT_READY') {
+  constructor(readonly code: 'ACCOUNT_MISMATCH' | 'STATEMENT_BUSY' | 'STATEMENT_NOT_FOUND' | 'STATEMENT_NOT_READY') {
     super(code);
   }
 }
@@ -40,11 +40,11 @@ export class StatementPublisher {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async publish(statementId: number): Promise<void> {
+  async publish(statementId: number, destinationAccount: { id: string; name: string }): Promise<void> {
     if (this.publishing.has(statementId)) throw new StatementPublicationError('STATEMENT_BUSY');
     this.publishing.add(statementId);
     try {
-      await this.claim(statementId);
+      const accountId = await this.claim(statementId, destinationAccount);
       const transactions = await this.database
         .selectFrom('statement_transactions')
         .selectAll()
@@ -73,7 +73,7 @@ export class StatementPublisher {
           notes: '',
           payee_name: transaction.reviewed_description ?? transaction.description,
           }));
-        if (pending.length > 0) await this.actualBudget.importTransactions(pending);
+        if (pending.length > 0) await this.actualBudget.importTransactions(accountId, pending);
 
         const reviewedTransactions = includedTransactions.map((transaction) => ({
           transaction,
@@ -86,7 +86,7 @@ export class StatementPublisher {
           payee_name: transaction.reviewed_description ?? transaction.description,
         }));
         const dates = reviewedTransactions.map(({ date }) => date).sort();
-        const actualTransactions = await this.actualBudget.findTransactions(dates[0]!, dates[dates.length - 1]!);
+        const actualTransactions = await this.actualBudget.findTransactions(accountId, dates[0]!, dates[dates.length - 1]!);
         const byImportId = new Map(actualTransactions
           .filter((transaction) => transaction.imported_id)
           .map((transaction) => [transaction.imported_id!, transaction]));
@@ -170,10 +170,10 @@ export class StatementPublisher {
     }
   }
 
-  private async claim(statementId: number): Promise<void> {
+  private async claim(statementId: number, destinationAccount: { id: string; name: string }): Promise<string> {
     const statement = await this.database
       .selectFrom('statements')
-      .select('status')
+      .select(['actual_account_id', 'status'])
       .where('id', '=', statementId)
       .executeTakeFirst();
     if (!statement) throw new StatementPublicationError('STATEMENT_NOT_FOUND');
@@ -181,15 +181,26 @@ export class StatementPublisher {
     if (!['ready for review', 'publish failed'].includes(statement.status)) {
       throw new StatementPublicationError('STATEMENT_NOT_READY');
     }
+    if (statement.actual_account_id !== null && statement.actual_account_id !== destinationAccount.id) {
+      throw new StatementPublicationError('ACCOUNT_MISMATCH');
+    }
+    const accountId = statement.actual_account_id ?? destinationAccount.id;
     const updated = await this.database
       .updateTable('statements')
-      .set({ status: 'publishing', updated_at: this.now().toISOString() })
+      .set({
+        ...(statement.actual_account_id === null
+          ? { actual_account_id: destinationAccount.id, actual_account_name: destinationAccount.name }
+          : {}),
+        status: 'publishing',
+        updated_at: this.now().toISOString(),
+      })
       .where('id', '=', statementId)
       .where('status', 'in', ['ready for review', 'publish failed'])
       .execute();
     if (Number(updated[0]?.numUpdatedRows ?? 0) !== 1) {
       throw new StatementPublicationError('STATEMENT_BUSY');
     }
+    return accountId;
   }
 }
 

@@ -31,6 +31,7 @@ async function setup() {
   };
   const actual = new MockActualBudget();
   const app = buildServer({
+    accountSource: actual,
     database,
     directUploads: new DirectUploadProcessor(database.db, [parser]),
     publisher: new StatementPublisher(database.db, actual),
@@ -40,11 +41,14 @@ async function setup() {
 }
 
 class MockActualBudget implements ActualBudgetPublisher {
+  readonly accounts = [{ closed: false, id: 'account-1', name: 'Current account', offBudget: false }];
   readonly imported = new Map<string, ActualTransaction>();
   importCalls = 0;
   failNextImport = false;
 
-  async importTransactions(transactions: Omit<ActualTransaction, 'id'>[]) {
+  async getAccounts() { return this.accounts; }
+
+  async importTransactions(_accountId: string, transactions: Omit<ActualTransaction, 'id'>[]) {
     this.importCalls += 1;
     for (const transaction of transactions) {
       if (!this.imported.has(transaction.imported_id!)) {
@@ -57,7 +61,7 @@ class MockActualBudget implements ActualBudgetPublisher {
     }
   }
 
-  async findTransactions() { return [...this.imported.values()]; }
+  async findTransactions(_accountId: string) { return [...this.imported.values()]; }
   async resolvePayee(name: string) { return `payee-${name}`; }
   async synchronize() {}
   async updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>) {
@@ -67,6 +71,15 @@ class MockActualBudget implements ActualBudgetPublisher {
 }
 
 describe('mocked end-to-end reliability', () => {
+  it('lists Actual accounts for statement publication', async () => {
+    const { app, database } = await setup();
+    const response = await app.inject({ method: 'GET', url: '/api/actual/accounts' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accounts: [{ closed: false, id: 'account-1', name: 'Current account', offBudget: false }] });
+    await app.close();
+    await database.close();
+  });
+
   it('preserves review changes when the same PDF is uploaded again', async () => {
     const { app, database, parser } = await setup();
     const request = upload('synthetic', Buffer.from('%PDF-synthetic'));
@@ -95,12 +108,31 @@ describe('mocked end-to-end reliability', () => {
     const statementId = uploaded.json().statementId;
     await new Promise((resolve) => setImmediate(resolve));
     actual.failNextImport = true;
-    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish` })).statusCode).toBe(500);
+    const publication = { accountId: 'account-1', confirm: true };
+    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish`, payload: publication })).statusCode).toBe(500);
     expect((await app.inject({ method: 'GET', url: `/api/statements/${statementId}` })).json().status).toBe('publish failed');
-    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish`, payload: publication })).statusCode).toBe(204);
     expect(actual.imported.size).toBe(1);
     expect(actual.importCalls).toBe(2);
     expect((await app.inject({ method: 'GET', url: `/api/statements/${statementId}` })).json().status).toBe('published');
+    expect((await app.inject({ method: 'GET', url: `/api/statements/${statementId}` })).json().actualAccount)
+      .toEqual({ id: 'account-1', name: 'Current account' });
+    await app.close();
+    await database.close();
+  });
+
+  it('requires a confirmed active destination account', async () => {
+    const { app, database, actual } = await setup();
+    const request = upload('synthetic', Buffer.from('%PDF-account-validation'));
+    const uploaded = await app.inject({ method: 'POST', url: '/api/statements/upload', headers: { 'content-type': request.contentType }, payload: request.payload });
+    const statementId = uploaded.json().statementId;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish`, payload: { accountId: 'account-1' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish`, payload: { accountId: 'missing', confirm: true } })).statusCode).toBe(400);
+    actual.accounts[0]!.closed = true;
+    expect((await app.inject({ method: 'POST', url: `/api/statements/${statementId}/publish`, payload: { accountId: 'account-1', confirm: true } })).statusCode).toBe(400);
+    expect(actual.importCalls).toBe(0);
     await app.close();
     await database.close();
   });

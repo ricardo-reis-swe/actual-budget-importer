@@ -20,8 +20,16 @@ export class ApplicationDatabase {
     });
   }
 
-  async migrate(): Promise<void> {
+  async migrate(legacyActualAccountId?: string): Promise<void> {
     await runMigrations(this.db);
+    if (legacyActualAccountId) {
+      await this.db
+        .updateTable('statements')
+        .set({ actual_account_id: legacyActualAccountId })
+        .where('actual_account_id', 'is', null)
+        .where('status', 'in', ['published', 'publishing', 'publish failed'])
+        .execute();
+    }
   }
 
   async checkHealth(): Promise<void> {

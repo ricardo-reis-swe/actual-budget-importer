@@ -2,9 +2,9 @@ import { resolve } from 'node:path';
 
 export interface ApplicationConfiguration {
   actualBudget: {
-    accountId: string;
     budgetId: string;
     encryptionPassword?: string;
+    legacyAccountId?: string;
     password: string;
     serverUrl: URL;
   };
@@ -81,12 +81,13 @@ export function loadConfiguration(
   }
 
   const encryptionPassword = optional(environment, 'ACTUAL_ENCRYPTION_PASSWORD');
+  const legacyAccountId = optional(environment, 'ACTUAL_ACCOUNT_ID');
 
   return {
     actualBudget: {
-      accountId: required(environment, 'ACTUAL_ACCOUNT_ID'),
       budgetId: required(environment, 'ACTUAL_BUDGET_ID'),
       ...(encryptionPassword ? { encryptionPassword } : {}),
+      ...(legacyAccountId ? { legacyAccountId } : {}),
       password: required(environment, 'ACTUAL_PASSWORD'),
       serverUrl: url(required(environment, 'ACTUAL_SERVER_URL'), 'ACTUAL_SERVER_URL'),
     },

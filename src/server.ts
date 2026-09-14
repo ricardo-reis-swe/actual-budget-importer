@@ -33,6 +33,7 @@ import {
 import type { BankParser } from './parsers/bank-parser.js';
 import { CategoryCatalog, type ActualCategorySource } from './categories/category-catalog.js';
 import { ParserSettings, ParserSettingsError } from './parsers/parser-settings.js';
+import type { ActualAccountSource } from './publishing/actual-budget-client.js';
 
 export interface PaperlessStatementLifecycle {
   acceptPaperlessDocument(documentId: number): Promise<{ id: number; status: string }>;
@@ -56,6 +57,7 @@ export interface ApplicationLogger {
 }
 
 export interface ServerOptions {
+  accountSource?: ActualAccountSource;
   database: DatabaseHealth;
   frontendDirectory?: string;
   logger?: ApplicationLogger;
@@ -162,6 +164,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     }
   });
 
+  if (options.accountSource) {
+    app.get('/api/actual/accounts', async () => ({ accounts: await options.accountSource!.getAccounts() }));
+  }
+
   if (options.statements) {
     const statements = options.statements;
 
@@ -218,16 +224,29 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   if (options.publisher) {
     const publisher = options.publisher;
-    app.post<{ Params: { statementId: string } }>('/api/statements/:statementId/publish', async (request, reply) => {
+    app.post<{ Body: unknown; Params: { statementId: string } }>('/api/statements/:statementId/publish', async (request, reply) => {
       try {
+        if (!options.accountSource) {
+          return reply.code(503).send({ message: 'Actual Budget accounts are unavailable.' });
+        }
+        const publication = validatePublication(request.body);
+        if (!publication) {
+          return reply.code(400).send({ message: 'Select an Actual Budget account and confirm publication.' });
+        }
+        const account = (await options.accountSource.getAccounts()).find((item) => item.id === publication.accountId);
+        if (!account || account.closed) {
+          return reply.code(400).send({ message: 'Select an active Actual Budget account.' });
+        }
         if (options.categoryCatalog && options.categorySource) {
           await options.categoryCatalog.refresh(options.categorySource);
         }
-        await publisher.publish(parseId(request.params.statementId));
+        await publisher.publish(parseId(request.params.statementId), account);
         return reply.code(204).send();
       } catch (error) {
         if (error instanceof StatementPublicationError) {
-          const message = error.code === 'STATEMENT_NOT_FOUND'
+          const message = error.code === 'ACCOUNT_MISMATCH'
+            ? 'This statement must be retried using its previously selected account.'
+            : error.code === 'STATEMENT_NOT_FOUND'
             ? 'Statement not found.'
             : error.code === 'STATEMENT_BUSY'
               ? 'This statement is already publishing.'
@@ -484,6 +503,13 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   });
 
   return app;
+}
+
+function validatePublication(value: unknown): { accountId: string } | undefined {
+  if (!isRecord(value) || value.confirm !== true || typeof value.accountId !== 'string' || !value.accountId.trim()) {
+    return undefined;
+  }
+  return { accountId: value.accountId.trim() };
 }
 
 function registerFrontend(app: FastifyInstance, frontendDirectory: string): void {

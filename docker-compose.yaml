@@ -10,7 +10,6 @@ services:
       ACTUAL_SERVER_URL: https://actual.example.test # Required Actual Budget server URL.
       ACTUAL_PASSWORD: change-me # Required Actual Budget server password.
       ACTUAL_BUDGET_ID: replace-with-budget-sync-id # Required budget sync ID.
-      ACTUAL_ACCOUNT_ID: replace-with-destination-account-id # Required destination account ID.
       ACTUAL_ENCRYPTION_PASSWORD: "" # (Optional) Budget encryption password.
 
       APP_PORT: "3000" # (Optional) Application HTTP port.

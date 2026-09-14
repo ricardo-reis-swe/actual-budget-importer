@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { ConfigurationError, loadConfiguration } from '../src/config.js';
 
 const requiredConfiguration = {
-  ACTUAL_ACCOUNT_ID: 'account-id',
   ACTUAL_BUDGET_ID: 'budget-id',
   ACTUAL_PASSWORD: 'password',
   ACTUAL_SERVER_URL: 'https://actual.example.test',
@@ -17,6 +16,12 @@ describe('application configuration', () => {
     expect(configuration.dataDirectory).toMatch(/data$/);
     expect(configuration.port).toBe(3000);
     expect(configuration.paperless).toBeUndefined();
+    expect(configuration.actualBudget.legacyAccountId).toBeUndefined();
+  });
+
+  it('accepts the former destination account as an optional migration aid', () => {
+    expect(loadConfiguration({ ...requiredConfiguration, ACTUAL_ACCOUNT_ID: 'legacy-account' }).actualBudget.legacyAccountId)
+      .toBe('legacy-account');
   });
 
   it('rejects missing Actual Budget settings', () => {

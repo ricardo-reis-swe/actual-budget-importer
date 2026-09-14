@@ -7,19 +7,30 @@ import { type ApplicationConfiguration } from '../config.js';
 import { type ActualBudgetPublisher, type ActualTransaction } from './statement-publisher.js';
 import { type ActualCategorySource } from '../categories/category-catalog.js';
 
-export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategorySource {
+export interface ActualAccount {
+  closed: boolean;
+  id: string;
+  name: string;
+  offBudget: boolean;
+}
+
+export interface ActualAccountSource {
+  getAccounts(): Promise<readonly ActualAccount[]>;
+}
+
+export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategorySource, ActualAccountSource {
   private queue = Promise.resolve();
 
   constructor(private readonly configuration: ApplicationConfiguration) {}
 
-  async importTransactions(transactions: Omit<ActualTransaction, 'id'>[]): Promise<void> {
+  async importTransactions(accountId: string, transactions: Omit<ActualTransaction, 'id'>[]): Promise<void> {
     const imports = transactions.map(({ category, ...transaction }) => ({
       ...transaction,
-      account: this.configuration.actualBudget.accountId,
+      account: accountId,
       ...(category ? { category } : {}),
     }));
     await this.withBudget(() => actual.importTransactions(
-      this.configuration.actualBudget.accountId,
+      accountId,
       imports as Parameters<typeof actual.importTransactions>[1],
       {
       defaultCleared: true,
@@ -30,8 +41,17 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     }));
   }
 
-  async findTransactions(startDate: string, endDate: string): Promise<ActualTransaction[]> {
-    return this.withBudget(() => actual.getTransactions(this.configuration.actualBudget.accountId, startDate, endDate) as Promise<ActualTransaction[]>);
+  async findTransactions(accountId: string, startDate: string, endDate: string): Promise<ActualTransaction[]> {
+    return this.withBudget(() => actual.getTransactions(accountId, startDate, endDate) as Promise<ActualTransaction[]>);
+  }
+
+  async getAccounts(): Promise<readonly ActualAccount[]> {
+    return this.withBudget(async () => (await actual.getAccounts()).map((account) => ({
+      closed: account.closed ?? false,
+      id: account.id,
+      name: account.name,
+      offBudget: account.offbudget ?? false,
+    })));
   }
 
   async resolvePayee(name: string): Promise<string> {
