@@ -16,6 +16,7 @@ RUN --mount=type=cache,id=actual-budget-importer-pnpm,target=/root/.local/share/
   pnpm install --frozen-lockfile
 
 COPY index.html tsconfig.json vite.config.ts ./
+COPY public ./public
 COPY src ./src
 RUN pnpm run build
 RUN pnpm prune --prod

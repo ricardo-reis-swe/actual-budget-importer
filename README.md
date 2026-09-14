@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/actual-budget-importer-icon.svg" width="128" alt="Actual Budget Importer icon">
+</p>
+
 # Actual Budget Importer
 
 Actual Budget Importer turns ActivoBank and WiZink PDF statements into

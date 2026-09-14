@@ -35,6 +35,20 @@ main {
     box-shadow: 0 2px 8px #263b6808;
     padding: 0.7rem max(1rem, calc((100% - 1100px) / 2));
 }
+.app-brand-group {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+.app-logo-link {
+    display: flex;
+    flex: 0 0 auto;
+    border-radius: 0.65rem;
+}
+.app-logo {
+    width: 2.75rem;
+    height: 2.75rem;
+}
 .app-branding {
     display: flex;
     flex-direction: column;
@@ -711,6 +725,9 @@ form button {
     }
     .app-navigation {
         margin-left: auto;
+    }
+    .app-title {
+        font-size: 1.1rem;
     }
     .dashboard-header {
         flex-direction: column;
