@@ -35,6 +35,10 @@ function App() {
   const [modal, setModal] = useState<HeaderModal>();
   const statementId = new URLSearchParams(window.location.search).get('statementId');
 
+  useEffect(() => {
+    if (!statementId) void fetch('/api/categories/refresh', { method: 'POST' }).catch(() => undefined);
+  }, [statementId]);
+
   return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} />}</>;
 }
 

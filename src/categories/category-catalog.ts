@@ -34,21 +34,23 @@ export class CategoryCatalog {
       const remoteGroupIds = remoteGroups.map((group) => group.id);
       await transaction.updateTable('actual_category_groups').set({ deleted: 1 }).execute();
       await transaction.updateTable('actual_categories').set({ deleted: 1 }).execute();
-      for (const group of remoteGroups) {
-        await transaction.insertInto('actual_category_groups').values({ id: group.id, name: group.name, deleted: 0 })
-          .onConflict((conflict) => conflict.column('id').doUpdateSet({ name: group.name, deleted: 0 })).execute();
-        for (const category of group.categories) {
+      for (const [groupPosition, group] of remoteGroups.entries()) {
+        await transaction.insertInto('actual_category_groups').values({ id: group.id, name: group.name, deleted: 0, position: groupPosition })
+          .onConflict((conflict) => conflict.column('id').doUpdateSet({ name: group.name, deleted: 0, position: groupPosition })).execute();
+        for (const [categoryPosition, category] of group.categories.entries()) {
           await transaction.insertInto('actual_categories').values({
             id: category.id,
             group_id: group.id,
             name: category.name,
             hidden: category.hidden ? 1 : 0,
             deleted: 0,
+            position: categoryPosition,
           }).onConflict((conflict) => conflict.column('id').doUpdateSet({
             group_id: group.id,
             name: category.name,
             hidden: category.hidden ? 1 : 0,
             deleted: 0,
+            position: categoryPosition,
           })).execute();
         }
       }
@@ -62,9 +64,9 @@ export class CategoryCatalog {
 
   async list(): Promise<ActualCategoryGroup[]> {
     const groupRows = await this.database.selectFrom('actual_category_groups')
-      .selectAll().orderBy('name').execute();
+      .selectAll().orderBy('position').orderBy('name').execute();
     const categoryRows = await this.database.selectFrom('actual_categories')
-      .selectAll().orderBy('name').execute();
+      .selectAll().orderBy('group_id').orderBy('position').orderBy('name').execute();
     const used = new Set((await this.database.selectFrom('statement_transactions').select('actual_category_id').where('actual_category_id', 'is not', null).execute())
       .map((row) => row.actual_category_id));
     const groups = new Map<string, ActualCategoryGroup>();

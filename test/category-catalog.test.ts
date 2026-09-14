@@ -20,6 +20,27 @@ describe('category catalog synchronization', () => {
     await database.close();
   });
 
+  it('preserves the group and category order returned by Actual Budget', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const catalog = new CategoryCatalog(database.db);
+
+    await catalog.refresh({
+      getCategoriesGrouped: vi.fn().mockResolvedValue([
+        { id: 'group-z', name: 'Z first', categories: [
+          { id: 'category-z', name: 'Z first' },
+          { id: 'category-a', name: 'A second' },
+        ] },
+        { id: 'group-a', name: 'A second', categories: [] },
+      ]),
+    });
+
+    const groups = await catalog.list();
+    expect(groups.map((group) => group.id)).toEqual(['group-z', 'group-a']);
+    expect(groups[0]?.categories.map((category) => category.id)).toEqual(['category-z', 'category-a']);
+    await database.close();
+  });
+
   it('caches groups and retains categories used by transactions after deletion', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
@@ -38,8 +59,8 @@ describe('category catalog synchronization', () => {
 
     await catalog.refresh(source);
     await expect(catalog.list()).resolves.toEqual([{ id: 'group-1', name: 'Needs', deleted: false, categories: [
-      { id: 'hidden-category', name: 'Hidden', groupId: 'group-1', hidden: true, deleted: false },
       { id: 'deleted-category', name: 'Old', groupId: 'group-1', hidden: false, deleted: false },
+      { id: 'hidden-category', name: 'Hidden', groupId: 'group-1', hidden: true, deleted: false },
     ] }]);
     await catalog.refresh(source);
     await expect(catalog.list()).resolves.toEqual([{ id: 'group-1', name: 'Needs', deleted: false, categories: [

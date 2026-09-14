@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { GroupedCategorySelect } from './grouped-category-select.js';
+
 interface StatementTransaction {
   actualCategoryId: string | null;
   amountCents: number;
@@ -109,6 +111,7 @@ export function StatementReviewPage() {
   const [parserFile, setParserFile] = useState<File>();
   const [isChangingParser, setIsChangingParser] = useState(false);
   const [parserError, setParserError] = useState<string>();
+  const [showOnlyUncategorized, setShowOnlyUncategorized] = useState(false);
 
   useEffect(() => {
     const statementId = new URLSearchParams(window.location.search).get('statementId');
@@ -116,9 +119,14 @@ export function StatementReviewPage() {
       setError('Select a statement to review.');
       return;
     }
-    void fetch('/api/categories')
-      .then(async (response) => response.ok ? response.json() as Promise<{ groups: CategoryGroup[] }> : { groups: [] })
-      .then((loaded) => setCategoryGroups(loaded.groups));
+    void fetch('/api/categories/refresh', { method: 'POST' })
+      .then(async (response) => {
+        if (response.ok) return response.json() as Promise<{ groups: CategoryGroup[] }>;
+        const cached = await fetch('/api/categories');
+        return cached.ok ? cached.json() as Promise<{ groups: CategoryGroup[] }> : { groups: [] };
+      })
+      .then((loaded) => setCategoryGroups(loaded.groups))
+      .catch(() => undefined);
     void fetch('/api/parsers')
       .then(async (response) => response.ok ? response.json() as Promise<{ parsers: ParserOption[] }> : { parsers: [] })
       .then((loaded) => setParsers(loaded.parsers));
@@ -137,12 +145,14 @@ export function StatementReviewPage() {
 
   const readOnly = statement?.status === 'published';
   const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed';
-  const categories = categoryGroups.flatMap((group) => group.categories);
 
   if (error) return <main><p role="alert">{error}</p></main>;
   if (!statement) return <main><p>Loading statement…</p></main>;
 
   const includedTransactions = statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded);
+  const visibleTransactions = showOnlyUncategorized
+    ? statement.transactions.filter((transaction) => !drafts[transaction.id]?.actualCategoryId)
+    : statement.transactions;
   const inflowCents = includedTransactions.reduce((total, transaction) => {
     const amount = Number(drafts[transaction.id]?.amountCents ?? transaction.amountCents);
     return amount > 0 ? total + amount : total;
@@ -349,28 +359,25 @@ export function StatementReviewPage() {
       {parserError && <p role="alert">{parserError}</p>}
     </section>}
     <section className="review-summary" aria-label="Review summary"><div><strong>{statement.transactions.length}</strong><span>Transactions</span></div><div><strong>{statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded).length}</strong><span>Included</span></div><div><strong>{formatCents(totalCents(statement, drafts))}</strong><span>Included total</span></div></section>
-    <div className="review-actions">{!readOnly && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={() => void openPublishDialog()} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}</div>
+    <div className="review-actions"><label className="transaction-filter"><input type="checkbox" checked={showOnlyUncategorized} onChange={(event) => setShowOnlyUncategorized(event.target.checked)} />Show only uncategorized</label><div className="review-action-buttons">{!readOnly && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={() => void openPublishDialog()} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}</div></div>
     {rulesFeedback && <p className="rules-feedback" role="status">{rulesFeedback}</p>}
     <div className="transaction-table-wrap"><table className="transaction-table">
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>
-      <tbody>{statement.transactions.map((transaction) => {
+      <tbody>{visibleTransactions.map((transaction) => {
         const draft = drafts[transaction.id]!;
         const isEditing = selectedTransactionId === transaction.id;
         const cell = (field: keyof ReviewDraft, value: ReactNode) => editingField === field && selectedTransactionId === transaction.id && !readOnly
           ? <input className="inline-editor" autoFocus value={draft[field] as string} onChange={(event) => updateDraft(transaction, field, event.target.value)} onBlur={() => { saveInline(transaction); setEditingField(undefined); }} /> : <button className="inline-cell" type="button" onClick={() => editCell(transaction, field)}>{value}</button>;
-        const selectedCategory = categories.find((category) => category.id === draft.actualCategoryId);
         return <tr className={isEditing ? 'transaction-row-selected' : undefined} key={transaction.id}>
           <td>{cell('date', draft.date)}</td><td>{cell('description', draft.description)}</td><td>{cell('amountCents', formatCents(Number(draft.amountCents)))}</td>
-          <td className="category-cell"><select className="category-select" aria-label={`Category for ${draft.description}`} disabled={readOnly} value={draft.actualCategoryId} onChange={(event) => selectCategory(transaction, event.target.value)}>
-            {selectedCategory?.deleted && <option value={selectedCategory.id}>{selectedCategory.name} (deleted)</option>}
-            <option value="">Uncategorized</option>{categoryGroups.filter((group) => !group.deleted).map((group) => <optgroup key={group.id} label={group.name}>{group.categories.filter((category) => !category.deleted).map((category) => <option key={category.id} value={category.id}>{category.name}{category.hidden ? ' (hidden)' : ''}</option>)}</optgroup>)}</select></td><td>{draft.excluded ? 'No' : 'Yes'}</td>
+          <td className="category-cell"><GroupedCategorySelect ariaLabel={`Category for ${draft.description}`} disabled={readOnly} emptyLabel="Uncategorized" fillRemainingViewport groups={categoryGroups} value={draft.actualCategoryId} onChange={(categoryId) => selectCategory(transaction, categoryId)} /></td><td>{draft.excluded ? 'No' : 'Yes'}</td>
           <td className="row-actions">{!readOnly && <><button type="button" title={draft.excluded ? 'Include transaction' : 'Exclude transaction'} onClick={() => {
             const updatedDraft = { ...draft, excluded: !draft.excluded };
             setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
             saveInline(transaction, updatedDraft);
           }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button type="button" title="Add transaction rule" aria-label="Add transaction rule" onClick={() => openRuleDialog(transaction)}>＋</button></>}</td>
         </tr>;
-      })}</tbody>
+      })}{showOnlyUncategorized && visibleTransactions.length === 0 && <tr><td className="transaction-table-empty" colSpan={6}>No uncategorized transactions.</td></tr>}</tbody>
     </table></div>
     {publishDialogOpen && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-dialog-title"><h2 id="publish-dialog-title">Publish statement</h2><p>Confirm the transactions and destination account before publishing.</p><form onSubmit={(event) => { event.preventDefault(); void publish(); }}>
       <dl className="publish-summary"><div><dt>Included</dt><dd>{includedTransactions.length}</dd></div><div><dt>Excluded</dt><dd>{statement.transactions.length - includedTransactions.length}</dd></div><div><dt>Inflows</dt><dd>{formatCents(inflowCents)}</dd></div><div><dt>Outflows</dt><dd>{formatCents(outflowCents)}</dd></div></dl>
@@ -380,6 +387,6 @@ export function StatementReviewPage() {
       {publishError && <p role="alert">{publishError}</p>}
       <div className="dialog-actions"><button type="button" className="secondary-button" disabled={isPublishing} onClick={() => setPublishDialogOpen(false)}>Cancel</button><button type="submit" disabled={isPublishing || isLoadingAccounts || !selectedAccountId || Boolean(publishError)}>{isPublishing ? 'Publishing…' : 'Confirm and publish'}</button></div>
     </form></section></div>}
-    {ruleTransactionId && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-dialog-title"><h2 id="rule-dialog-title">Create transaction rule</h2><p>Choose what should happen when a transaction description contains this text.</p><form onSubmit={(event) => { event.preventDefault(); addRule(applyRuleToStatement); }}><label htmlFor="rule-description">Description contains<input autoFocus id="rule-description" value={ruleDescription} onChange={(event) => setRuleDescription(event.target.value)} /></label><label htmlFor="rule-category">Category<select id="rule-category" value={ruleCategoryId} onChange={(event) => setRuleCategoryId(event.target.value)}><option value="">Leave category unchanged</option>{categoryGroups.filter((group) => !group.deleted).map((group) => <optgroup key={group.id} label={group.name}>{group.categories.filter((category) => !category.deleted).map((category) => <option key={category.id} value={category.id}>{category.name}{category.hidden ? ' (hidden)' : ''}</option>)}</optgroup>)}</select></label><label htmlFor="rule-inclusion">Publishing<select id="rule-inclusion" value={ruleInclusion} onChange={(event) => setRuleInclusion(event.target.value)}><option value="">Leave inclusion unchanged</option><option value="include">Include transaction</option><option value="exclude">Exclude transaction</option></select></label><label htmlFor="rule-scope">Apply rule to<select id="rule-scope" value={ruleParserId} onChange={(event) => setRuleParserId(event.target.value)}><option value="">All statements</option>{statement.parserId && <option value={statement.parserId}>Only {statement.parserId} statements</option>}</select></label><label className="rule-apply-to-statement"><input type="checkbox" checked={applyRuleToStatement} onChange={(event) => setApplyRuleToStatement(event.target.checked)} />Run new rule on the entire statement</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setRuleTransactionId(undefined); setRuleDescription(''); setRuleCategoryId(''); setRuleInclusion(''); setRuleParserId(''); setApplyRuleToStatement(true); }}>Cancel</button><button type="submit" disabled={!ruleDescription.trim() || (!ruleCategoryId && !ruleInclusion)}>Create rule</button></div></form></section></div>}
+    {ruleTransactionId && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-dialog-title"><h2 id="rule-dialog-title">Create transaction rule</h2><p>Choose what should happen when a transaction description contains this text.</p><form onSubmit={(event) => { event.preventDefault(); addRule(applyRuleToStatement); }}><label htmlFor="rule-description">Description contains<input autoFocus id="rule-description" value={ruleDescription} onChange={(event) => setRuleDescription(event.target.value)} /></label><label htmlFor="rule-category">Category<GroupedCategorySelect id="rule-category" emptyLabel="Leave category unchanged" groups={categoryGroups} value={ruleCategoryId} onChange={setRuleCategoryId} /></label><label htmlFor="rule-inclusion">Publishing<select id="rule-inclusion" value={ruleInclusion} onChange={(event) => setRuleInclusion(event.target.value)}><option value="">Leave inclusion unchanged</option><option value="include">Include transaction</option><option value="exclude">Exclude transaction</option></select></label><label htmlFor="rule-scope">Apply rule to<select id="rule-scope" value={ruleParserId} onChange={(event) => setRuleParserId(event.target.value)}><option value="">All statements</option>{statement.parserId && <option value={statement.parserId}>Only {statement.parserId} statements</option>}</select></label><label className="rule-apply-to-statement"><input type="checkbox" checked={applyRuleToStatement} onChange={(event) => setApplyRuleToStatement(event.target.checked)} />Run new rule on the entire statement</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setRuleTransactionId(undefined); setRuleDescription(''); setRuleCategoryId(''); setRuleInclusion(''); setRuleParserId(''); setApplyRuleToStatement(true); }}>Cancel</button><button type="submit" disabled={!ruleDescription.trim() || (!ruleCategoryId && !ruleInclusion)}>Create rule</button></div></form></section></div>}
   </main>;
 }

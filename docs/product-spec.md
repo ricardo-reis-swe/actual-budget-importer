@@ -68,6 +68,14 @@ people can use it.
 - Users can review transactions and correct their details
   before publishing.
 - Users can assign or change a transaction's category.
+- Let users show only uncategorized transactions while reviewing a
+  statement.
+- Show categories as one group and category path, such as
+  **Home**/Bills, in transaction review and rule interfaces.
+- Users can create, rename, and remove Actual Budget categories
+  from their existing category group cards.
+- Require confirmation before removing a category from Actual
+  Budget.
 - Users can explicitly create reusable rules such as:
   "If the description contains X, assign category Y."
 - A rule can assign a category, mark matching transactions as

@@ -264,6 +264,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     app.post<{ Body: unknown }>('/api/categories', async (request, reply) => {
       try {
         const category = await categoryCreation.create(validateCategoryCreation(request.body));
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
         return reply.code(201).send(category);
       } catch (error) {
         if (error instanceof CategoryCreationError) {
@@ -275,6 +278,30 @@ export function buildServer(options: ServerOptions): FastifyInstance {
           return reply.code(400).send({ message });
         }
         throw error;
+      }
+    });
+
+    app.patch<{ Body: unknown; Params: { categoryId: string } }>('/api/categories/:categoryId', async (request, reply) => {
+      try {
+        const category = await categoryCreation.update(validateCategoryUpdate(request.params.categoryId, request.body));
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
+        return category;
+      } catch (error) {
+        return categoryManagementError(reply, error);
+      }
+    });
+
+    app.delete<{ Body: unknown; Params: { categoryId: string } }>('/api/categories/:categoryId', async (request, reply) => {
+      try {
+        await categoryCreation.delete(validateCategoryDeletion(request.params.categoryId, request.body));
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
+        return reply.code(204).send();
+      } catch (error) {
+        return categoryManagementError(reply, error);
       }
     });
 
@@ -743,6 +770,30 @@ function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId
     throw new CategoryCreationError('INVALID_CATEGORY_NAME');
   }
   return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
+}
+
+function validateCategoryUpdate(categoryId: string, value: unknown): { id: string; name: string } {
+  if (!isRecord(value) || typeof value.name !== 'string') {
+    throw new CategoryCreationError('INVALID_CATEGORY_NAME');
+  }
+  return { id: categoryId, name: value.name };
+}
+
+function validateCategoryDeletion(categoryId: string, value: unknown): { confirmed: boolean; id: string } {
+  if (!isRecord(value) || typeof value.confirmed !== 'boolean') {
+    throw new CategoryCreationError('CATEGORY_DELETION_NOT_CONFIRMED');
+  }
+  return { confirmed: value.confirmed, id: categoryId };
+}
+
+function categoryManagementError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
+  if (!(error instanceof CategoryCreationError)) throw error;
+  const message = error.code === 'CATEGORY_DELETION_NOT_CONFIRMED'
+    ? 'Category removal requires confirmation.'
+    : error.code === 'INVALID_CATEGORY_ID'
+      ? 'Select an existing category.'
+      : 'Provide a category name.';
+  return reply.code(400).send({ message });
 }
 
 function validateCategoryGroupCreation(value: unknown): { confirmed: boolean; name: string } {

@@ -98,6 +98,15 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     });
   }
 
+  async updateCategory(id: string, name: string): Promise<{ id: string; name: string }> {
+    await this.withBudget(() => actual.updateCategory(id, { name }));
+    return { id, name };
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    await this.withBudget(() => actual.deleteCategory(id));
+  }
+
   async updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void> {
     await this.withBudget(() => actual.updateTransaction(id, transaction as never));
   }

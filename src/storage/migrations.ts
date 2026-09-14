@@ -5,6 +5,7 @@ export interface DatabaseSchema {
     id: string;
     name: string;
     deleted: number;
+    position: Generated<number>;
   };
   actual_categories: {
     id: string;
@@ -12,6 +13,7 @@ export interface DatabaseSchema {
     name: string;
     hidden: number;
     deleted: number;
+    position: Generated<number>;
   };
   application_settings: {
     key: string;
@@ -231,6 +233,19 @@ const migrations: Migration[] = [
       await database.schema
         .alterTable('statements')
         .addColumn('actual_account_name', 'text')
+        .execute();
+    },
+  },
+  {
+    name: '008_actual_category_order',
+    async up(database) {
+      await database.schema
+        .alterTable('actual_category_groups')
+        .addColumn('position', 'integer', (column) => column.notNull().defaultTo(0))
+        .execute();
+      await database.schema
+        .alterTable('actual_categories')
+        .addColumn('position', 'integer', (column) => column.notNull().defaultTo(0))
         .execute();
     },
   },

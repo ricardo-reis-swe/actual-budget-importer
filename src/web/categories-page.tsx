@@ -7,10 +7,12 @@ interface Group { id: string; name: string; deleted: boolean; categories: Catego
 export function CategoriesPage() {
   const [groups, setGroups] = useState<Group[]>();
   const [groupName, setGroupName] = useState('');
-  const [groupId, setGroupId] = useState('');
-  const [name, setName] = useState('');
+  const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
+  const [editingCategoryId, setEditingCategoryId] = useState<string>();
+  const [editingCategoryName, setEditingCategoryName] = useState('');
   const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [managingCategoryId, setManagingCategoryId] = useState<string>();
+  const [savingCategoryGroupId, setSavingCategoryGroupId] = useState<string>();
   const [savingGroup, setSavingGroup] = useState(false);
 
   const load = () => fetch('/api/categories/refresh', { method: 'POST' })
@@ -39,7 +41,6 @@ export function CategoriesPage() {
       } else {
         const created = await response.json() as { id: string; name: string };
         setGroups((current) => [...(current ?? []), { ...created, deleted: false, categories: [] }]);
-        setGroupId(created.id);
         setGroupName('');
       }
     } catch {
@@ -49,9 +50,11 @@ export function CategoriesPage() {
     }
   };
 
-  const create = async (event: FormEvent<HTMLFormElement>) => {
+  const create = async (event: FormEvent<HTMLFormElement>, groupId: string) => {
     event.preventDefault();
-    setSaving(true);
+    const name = categoryNames[groupId] ?? '';
+    if (!name.trim()) return;
+    setSavingCategoryGroupId(groupId);
     setError('');
     try {
       const response = await fetch('/api/categories', {
@@ -66,12 +69,72 @@ export function CategoriesPage() {
         setGroups((current) => current?.map((group) => group.id === groupId
           ? { ...group, categories: [...group.categories, { id: created.id, name: created.name, deleted: false, hidden: false }] }
           : group));
-        setName('');
+        setCategoryNames((current) => ({ ...current, [groupId]: '' }));
       }
     } catch {
       setError('Category could not be created.');
     } finally {
-      setSaving(false);
+      setSavingCategoryGroupId(undefined);
+    }
+  };
+
+  const update = async (event: FormEvent<HTMLFormElement>, categoryId: string) => {
+    event.preventDefault();
+    if (!editingCategoryName.trim()) return;
+    setManagingCategoryId(categoryId);
+    setError('');
+    try {
+      const response = await fetch(`/api/categories/${encodeURIComponent(categoryId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: editingCategoryName }),
+      });
+      if (!response.ok) {
+        setError(((await response.json()) as { message?: string }).message ?? 'Category could not be renamed.');
+      } else {
+        const updated = await response.json() as { id: string; name: string };
+        setGroups((current) => current?.map((group) => ({
+          ...group,
+          categories: group.categories.map((category) => category.id === updated.id
+            ? { ...category, name: updated.name }
+            : category),
+        })));
+        setEditingCategoryId(undefined);
+        setEditingCategoryName('');
+      }
+    } catch {
+      setError('Category could not be renamed.');
+    } finally {
+      setManagingCategoryId(undefined);
+    }
+  };
+
+  const remove = async (category: Category) => {
+    if (!window.confirm(`Remove the category “${category.name}” from Actual Budget? This can affect transactions that use it.`)) return;
+    setManagingCategoryId(category.id);
+    setError('');
+    try {
+      const response = await fetch(`/api/categories/${encodeURIComponent(category.id)}`, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      if (!response.ok) {
+        setError(((await response.json()) as { message?: string }).message ?? 'Category could not be removed.');
+      } else {
+        setGroups((current) => current?.map((group) => ({
+          ...group,
+          categories: group.categories.filter((item) => item.id !== category.id),
+        })));
+        if (editingCategoryId === category.id) {
+          setEditingCategoryId(undefined);
+          setEditingCategoryName('');
+        }
+      }
+    } catch {
+      setError('Category could not be removed.');
+    } finally {
+      setManagingCategoryId(undefined);
     }
   };
 
@@ -85,13 +148,38 @@ export function CategoriesPage() {
       </form>
     </section>
     <section>
-      <h2>Create a category</h2>
-      <form onSubmit={create}>
-        <label>Category group <select value={groupId} onChange={(event) => setGroupId(event.target.value)} required><option value="">Select a group</option>{groups?.filter((group) => !group.deleted).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-        <label>Category name <input value={name} onChange={(event) => setName(event.target.value)} required /></label>
-        <button type="submit" disabled={saving || !groups}>{saving ? 'Creating…' : 'Create category'}</button>
-      </form>
+      <h2>Categories</h2>
+      {!groups
+        ? <p>Loading categories…</p>
+        : groups.length === 0
+          ? <p>No categories found. Refresh Actual Budget categories and try again.</p>
+          : <div className="category-groups">{groups.filter((group) => !group.deleted).map((group) => {
+            const activeCategories = group.categories.filter((category) => !category.deleted);
+            return <section className="category-group" key={group.id}>
+              <h3>{group.name}</h3>
+              <ul className="category-list">{activeCategories.map((category) => <li key={category.id}>
+                  {editingCategoryId === category.id
+                    ? <form className="category-edit-form" onSubmit={(event) => void update(event, category.id)}>
+                      <input className="category-name-input" autoFocus aria-label={`Edit ${category.name}`} value={editingCategoryName} onChange={(event) => setEditingCategoryName(event.target.value)} onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          setEditingCategoryId(undefined);
+                          setEditingCategoryName('');
+                        }
+                      }} disabled={managingCategoryId !== undefined} required />
+                    </form>
+                    : <button type="button" className="category-item-name" disabled={managingCategoryId !== undefined} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name); }}>
+                      <span>{category.name}</span>{category.hidden && <span className="category-hidden">Hidden</span>}
+                    </button>}
+                  <button type="button" className="statement-card-delete category-delete-button" disabled={managingCategoryId !== undefined} aria-label={`Delete ${category.name}`} title="Delete category" onClick={() => void remove(category)}>🗑</button>
+                </li>)}
+                <li className="category-new-row">
+                  <form className="category-create-form" onSubmit={(event) => void create(event, group.id)}>
+                    <input aria-label={`New category in ${group.name}`} value={categoryNames[group.id] ?? ''} onChange={(event) => setCategoryNames((current) => ({ ...current, [group.id]: event.target.value }))} disabled={savingCategoryGroupId !== undefined || managingCategoryId !== undefined} required />
+                  </form>
+                </li>
+              </ul>
+            </section>;
+          })}</div>}
     </section>
-    <section><h2>Categories</h2>{!groups ? <p>Loading categories…</p> : groups.length === 0 ? <p>No categories found. Refresh Actual Budget categories and try again.</p> : <div className="category-groups">{groups.filter((group) => !group.deleted).map((group) => <section className="category-group" key={group.id}><h3>{group.name}</h3>{group.categories.filter((category) => !category.deleted).length === 0 ? <p className="category-empty">No active categories.</p> : <ul className="category-list">{group.categories.filter((category) => !category.deleted).map((category) => <li key={category.id}><span>{category.name}</span>{category.hidden && <span className="category-hidden">Hidden</span>}</li>)}</ul>}</section>)}</div>}</section>
   </main>;
 }

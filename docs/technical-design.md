@@ -82,7 +82,7 @@
 - Mark published statement transactions as cleared.
 - Leave notes empty.
 
-## Actual Budget category creation
+## Actual Budget category management
 
 - Provide `POST /api/category-groups` with a confirmed group name.
 - Create category groups as standard expense groups through the
@@ -91,6 +91,13 @@
   category cache before using the group.
 - Provide `POST /api/categories` with a confirmed category name and
   an existing Actual Budget category group ID.
+- Provide `PATCH /api/categories/:categoryId` with a non-empty category
+  name to rename an existing category.
+- Provide `DELETE /api/categories/:categoryId` with explicit confirmation
+  to remove a category.
+- Apply category creation, renaming, and removal through the official
+  `@actual-app/api` package and refresh the local category cache after
+  each change.
 
 ## Actual Budget publishing procedure
 

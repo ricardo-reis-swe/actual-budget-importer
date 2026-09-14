@@ -224,7 +224,7 @@ describe('server baseline', () => {
     const createCategory = vi.fn().mockResolvedValue({ id: 'actual-category-1', name: 'Groceries' });
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory, createCategoryGroup: vi.fn() }),
+      categoryCreation: new CategoryCreation({ createCategory, createCategoryGroup: vi.fn(), deleteCategory: vi.fn(), updateCategory: vi.fn() }),
     });
 
     const unconfirmed = await app.inject({
@@ -247,7 +247,7 @@ describe('server baseline', () => {
     const createCategoryGroup = vi.fn().mockResolvedValue({ id: 'actual-group-1', name: 'Everyday' });
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup }),
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup, deleteCategory: vi.fn(), updateCategory: vi.fn() }),
     });
 
     const unconfirmed = await app.inject({
@@ -263,6 +263,41 @@ describe('server baseline', () => {
     expect(created.statusCode).toBe(201);
     expect(created.json()).toEqual({ id: 'actual-group-1', name: 'Everyday' });
     expect(createCategoryGroup).toHaveBeenCalledWith('Everyday');
+    await app.close();
+  });
+
+  it('renames and removes categories through Actual Budget', async () => {
+    const updateCategory = vi.fn().mockResolvedValue({ id: 'category-1', name: 'Food' });
+    const deleteCategory = vi.fn();
+    const app = buildServer({
+      database: { checkHealth: () => undefined },
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup: vi.fn(), deleteCategory, updateCategory }),
+    });
+
+    const invalidUpdate = await app.inject({
+      method: 'PATCH', url: '/api/categories/category-1', payload: { name: ' ' },
+    });
+    expect(invalidUpdate.statusCode).toBe(400);
+    expect(updateCategory).not.toHaveBeenCalled();
+
+    const updated = await app.inject({
+      method: 'PATCH', url: '/api/categories/category-1', payload: { name: 'Food' },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual({ id: 'category-1', name: 'Food' });
+    expect(updateCategory).toHaveBeenCalledWith('category-1', 'Food');
+
+    const unconfirmedDelete = await app.inject({
+      method: 'DELETE', url: '/api/categories/category-1', payload: { confirmed: false },
+    });
+    expect(unconfirmedDelete.statusCode).toBe(400);
+    expect(deleteCategory).not.toHaveBeenCalled();
+
+    const deleted = await app.inject({
+      method: 'DELETE', url: '/api/categories/category-1', payload: { confirmed: true },
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect(deleteCategory).toHaveBeenCalledWith('category-1');
     await app.close();
   });
 
