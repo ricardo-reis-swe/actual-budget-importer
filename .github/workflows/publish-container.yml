@@ -84,7 +84,7 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=${{ inputs.image_tag || 'develop' }}
-            type=raw,value=latest,enable=${{ inputs.publish_latest }}
+            type=raw,value=latest,enable=${{ inputs.publish_latest || false }}
 
       - name: Build and publish container
         id: push
