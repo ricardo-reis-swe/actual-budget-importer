@@ -14,11 +14,15 @@ export interface CategorizationRule {
 
 export interface CategorizationRuleMatcher {
   match(description: string, parserId?: string | null): Promise<RuleMatch | null>;
+  matchMany?(transactions: readonly { description: string; parserId?: string | null }[]): Promise<(RuleMatch | null)[]>;
 }
 
 export interface RuleMatch {
   categoryId: string | null;
+  descriptionContains: string;
   excluded: boolean | null;
+  id: number;
+  parserId: string | null;
 }
 
 export class CategorizationRuleError extends Error {
@@ -110,15 +114,34 @@ export class CategorizationRules implements CategorizationRuleMatcher {
   }
 
   async match(description: string, parserId?: string | null): Promise<RuleMatch | null> {
-    const normalizedDescription = description.toLowerCase();
-    for (const rule of await this.list()) {
-      if ((rule.parserId === null || rule.parserId === parserId)
-        && normalizedDescription.includes(rule.descriptionContains.toLowerCase())) {
-        return { categoryId: rule.categoryId, excluded: rule.excluded };
-      }
-    }
-    return null;
+    return findMatchingRule(await this.list(), description, parserId);
   }
+
+  async matchMany(transactions: readonly { description: string; parserId?: string | null }[]): Promise<(RuleMatch | null)[]> {
+    const rules = await this.list();
+    return transactions.map((transaction) => findMatchingRule(rules, transaction.description, transaction.parserId));
+  }
+}
+
+function findMatchingRule(
+  rules: readonly CategorizationRule[],
+  description: string,
+  parserId?: string | null,
+): RuleMatch | null {
+  const normalizedDescription = description.toLowerCase();
+  for (const rule of rules) {
+    if ((rule.parserId === null || rule.parserId === parserId)
+      && normalizedDescription.includes(rule.descriptionContains.toLowerCase())) {
+      return {
+        categoryId: rule.categoryId,
+        descriptionContains: rule.descriptionContains,
+        excluded: rule.excluded,
+        id: rule.id,
+        parserId: rule.parserId,
+      };
+    }
+  }
+  return null;
 }
 
 function normalizeParser(parserId: string | null | undefined): string | null {

@@ -202,6 +202,11 @@
 - Store category and inclusion effects independently on each
   saved rule. Preserve existing category-only rules when the
   schema is migrated.
+- Include the first matching saved rule with each transaction returned for
+  statement review. Determine it from the reviewed description when present,
+  otherwise the extracted description, together with the statement parser.
+  Calculate this match from the current ordered rules rather than persisting
+  rule provenance on the transaction.
 - Store the destination Actual Budget account ID and the account name at
   selection time on each statement. Keep both nullable for historical
   statements whose destination was not recorded.

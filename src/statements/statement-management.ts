@@ -1,7 +1,7 @@
 import { type Kysely } from 'kysely';
 
 import { type DatabaseSchema } from '../storage/migrations.js';
-import { type CategorizationRuleMatcher } from '../rules/categorization-rules.js';
+import { type CategorizationRuleMatcher, type RuleMatch } from '../rules/categorization-rules.js';
 
 export interface StatementSummary {
   createdAt: string;
@@ -39,6 +39,7 @@ export interface StatementTransaction {
   description: string;
   excluded: boolean;
   id: number;
+  matchingRule: RuleMatch | null;
   position: number;
   reviewedAmountCents: number | null;
   reviewedDate: string | null;
@@ -58,6 +59,7 @@ export class StatementManagement {
     private readonly database: Kysely<DatabaseSchema>,
     private readonly now: () => Date = () => new Date(),
     private readonly paperless?: { getCorrespondentName(correspondentId: number): Promise<string> },
+    private readonly categorizationRules?: CategorizationRuleMatcher,
   ) {}
 
   async list(): Promise<StatementSummary[]> {
@@ -138,6 +140,15 @@ export class StatementManagement {
       .where('statement_id', '=', statementId)
       .orderBy('position')
       .execute();
+    const matchingRules = this.categorizationRules?.matchMany
+      ? await this.categorizationRules.matchMany(transactions.map((transaction) => ({
+        description: transaction.reviewed_description ?? transaction.description,
+        parserId: statement.parser_id,
+      })))
+      : await Promise.all(transactions.map((transaction) => this.categorizationRules?.match(
+        transaction.reviewed_description ?? transaction.description,
+        statement.parser_id,
+      ) ?? null));
 
     return {
       actualAccount: statement.actual_account_id === null
@@ -157,13 +168,14 @@ export class StatementManagement {
       },
       parserId: statement.parser_id,
       status: statement.status,
-      transactions: transactions.map((transaction) => ({
+      transactions: transactions.map((transaction, index) => ({
         actualCategoryId: transaction.actual_category_id,
         amountCents: transaction.amount_cents,
         date: transaction.date,
         description: transaction.description,
         excluded: transaction.excluded === 1,
         id: transaction.id,
+        matchingRule: matchingRules[index] ?? null,
         position: transaction.position,
         reviewedAmountCents: transaction.reviewed_amount_cents,
         reviewedDate: transaction.reviewed_date,
@@ -176,7 +188,7 @@ export class StatementManagement {
   async updateReview(statementId: number, transactionId: number, update: ReviewUpdate): Promise<StatementTransaction | undefined> {
     const statement = await this.database
       .selectFrom('statements')
-      .select('status')
+      .select(['parser_id', 'status'])
       .where('id', '=', statementId)
       .executeTakeFirst();
     if (!statement) {
@@ -219,6 +231,10 @@ export class StatementManagement {
       description: updated.description,
       excluded: updated.excluded === 1,
       id: updated.id,
+      matchingRule: await this.categorizationRules?.match(
+        updated.reviewed_description ?? updated.description,
+        statement.parser_id,
+      ) ?? null,
       position: updated.position,
       reviewedAmountCents: updated.reviewed_amount_cents,
       reviewedDate: updated.reviewed_date,

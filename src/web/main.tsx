@@ -10,7 +10,7 @@ import type { HeaderModal } from './app-header.js';
 import { ParserSettingsPage } from './parser-settings-page.js';
 import './styles.css';
 
-function HeaderModalDialog({ modal, onClose }: { modal: HeaderModal; onClose: () => void }) {
+function HeaderModalDialog({ modal, onClose, onRulesChanged }: { modal: HeaderModal; onClose: () => void; onRulesChanged: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -21,7 +21,7 @@ function HeaderModalDialog({ modal, onClose }: { modal: HeaderModal; onClose: ()
 
   const content = modal === 'parserSettings'
     ? <ParserSettingsPage />
-    : modal === 'rules' ? <CategorizationRulesPage /> : <CategoriesPage />;
+    : modal === 'rules' ? <CategorizationRulesPage onRulesChanged={onRulesChanged} /> : <CategoriesPage />;
 
   return <div className="header-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="header-modal" role="dialog" aria-modal="true" aria-label={modal === 'parserSettings' ? 'Parser settings' : modal === 'rules' ? 'Transaction rules' : 'Categories'}>
@@ -33,13 +33,14 @@ function HeaderModalDialog({ modal, onClose }: { modal: HeaderModal; onClose: ()
 
 function App() {
   const [modal, setModal] = useState<HeaderModal>();
+  const [rulesRevision, setRulesRevision] = useState(0);
   const statementId = new URLSearchParams(window.location.search).get('statementId');
 
   useEffect(() => {
     if (!statementId) void fetch('/api/categories/refresh', { method: 'POST' }).catch(() => undefined);
   }, [statementId]);
 
-  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} />}</>;
+  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage rulesRevision={rulesRevision} /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} onRulesChanged={() => setRulesRevision((current) => current + 1)} />}</>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

@@ -59,7 +59,7 @@ const app = buildServer({
   parsers,
   parserSettings,
   publisher,
-  statements: new StatementManagement(database.db, undefined, paperlessClient),
+  statements: new StatementManagement(database.db, undefined, paperlessClient, categorizationRules),
 });
 await categoryCatalog.refresh(actualBudget).catch(() => undefined);
 await app.listen({ host: '0.0.0.0', port: configuration.port });

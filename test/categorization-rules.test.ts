@@ -23,8 +23,8 @@ describe('categorization rules', () => {
     const coffee = await rules.create({ categoryId: 'coffee', descriptionContains: 'Coffee' });
     const market = await rules.create({ categoryId: 'groceries', descriptionContains: 'MARKET' });
 
-    expect(await rules.match('Morning COFFEE shop')).toEqual({ categoryId: 'coffee', excluded: null });
-    expect(await rules.match('Local market')).toEqual({ categoryId: 'groceries', excluded: null });
+    expect(await rules.match('Morning COFFEE shop')).toMatchObject({ categoryId: 'coffee', excluded: null });
+    expect(await rules.match('Local market')).toMatchObject({ categoryId: 'groceries', excluded: null });
     expect(await rules.match('Unrelated purchase')).toBeNull();
     expect(await rules.list()).toEqual([
       expect.objectContaining({ id: coffee.id, position: 0 }),
@@ -38,9 +38,9 @@ describe('categorization rules', () => {
     const broad = await rules.create({ categoryId: 'general', descriptionContains: 'shop' });
     const specific = await rules.create({ categoryId: 'coffee', descriptionContains: 'coffee shop' });
 
-    expect(await rules.match('Coffee shop')).toEqual({ categoryId: 'general', excluded: null });
+    expect(await rules.match('Coffee shop')).toMatchObject({ categoryId: 'general', excluded: null });
     await rules.reorder([specific.id, broad.id]);
-    expect(await rules.match('Coffee shop')).toEqual({ categoryId: 'coffee', excluded: null });
+    expect(await rules.match('Coffee shop')).toMatchObject({ categoryId: 'coffee', excluded: null });
     await database.close();
   });
 
@@ -49,8 +49,8 @@ describe('categorization rules', () => {
     await rules.create({ categoryId: 'coffee', descriptionContains: 'coffee', parserId: 'activobank' });
     await rules.create({ categoryId: 'general', descriptionContains: 'coffee' });
 
-    expect(await rules.match('Coffee shop', 'activobank')).toEqual({ categoryId: 'coffee', excluded: null });
-    expect(await rules.match('Coffee shop', 'wizink')).toEqual({ categoryId: 'general', excluded: null });
+    expect(await rules.match('Coffee shop', 'activobank')).toMatchObject({ categoryId: 'coffee', excluded: null });
+    expect(await rules.match('Coffee shop', 'wizink')).toMatchObject({ categoryId: 'general', excluded: null });
     await database.close();
   });
 
@@ -64,7 +64,7 @@ describe('categorization rules', () => {
     const saved = await rules.create({ categoryId: 'groceries', descriptionContains: 'market' });
     await expect(rules.update(saved.id, { categoryId: 'home', descriptionContains: 'hardware' }))
       .resolves.toMatchObject({ categoryId: 'home', descriptionContains: 'hardware' });
-    await expect(rules.match('Hardware Market')).resolves.toEqual({ categoryId: 'home', excluded: null });
+    await expect(rules.match('Hardware Market')).resolves.toMatchObject({ categoryId: 'home', excluded: null });
     await database.close();
   });
 
@@ -75,8 +75,8 @@ describe('categorization rules', () => {
 
     expect(excluded).toMatchObject({ categoryId: null, excluded: true });
     expect(combined).toMatchObject({ categoryId: 'income', excluded: false });
-    expect(await rules.match('Internal transfer')).toEqual({ categoryId: null, excluded: true });
-    expect(await rules.match('Monthly salary')).toEqual({ categoryId: 'income', excluded: false });
+    expect(await rules.match('Internal transfer')).toMatchObject({ categoryId: null, excluded: true });
+    expect(await rules.match('Monthly salary')).toMatchObject({ categoryId: 'income', excluded: false });
     await expect(rules.create({ categoryId: null, descriptionContains: 'noop', excluded: null }))
       .rejects.toEqual(new CategorizationRuleError('INVALID_RULE_ACTION'));
     await database.close();

@@ -791,6 +791,25 @@ form button {
     margin-left: 0.3rem;
     padding: 0.35rem 0.55rem;
 }
+.rule-row-button {
+    position: relative;
+}
+.rule-match-badge {
+    position: absolute;
+    top: -0.4rem;
+    right: -0.4rem;
+    display: grid;
+    width: 1rem;
+    height: 1rem;
+    place-items: center;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: #15803d;
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+}
 .dialog-backdrop {
     position: fixed;
     z-index: 10;

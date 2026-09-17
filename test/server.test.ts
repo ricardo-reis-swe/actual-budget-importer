@@ -46,7 +46,7 @@ async function createStatementServer() {
   const app = buildServer({
     database,
     categorizationRules: rules,
-    statements: new StatementManagement(database.db, () => new Date(timestamp)),
+    statements: new StatementManagement(database.db, () => new Date(timestamp), undefined, rules),
   });
   return { app, database, rules, statement, transaction };
 }
@@ -438,6 +438,37 @@ describe('server baseline', () => {
       id: statement.id,
       transactions: [expect.objectContaining({ id: transaction.id, excluded: false })],
     });
+    await app.close();
+    await database.close();
+  });
+
+  it('reports the first rule covering each transaction and refreshes it after review edits', async () => {
+    const { app, database, rules, statement, transaction } = await createStatementServer();
+    const parserRule = await rules.create({ categoryId: 'groceries', descriptionContains: 'merchant', parserId: 'activobank' });
+    await rules.create({ categoryId: 'general', descriptionContains: 'synthetic' });
+
+    const detail = await app.inject({ method: 'GET', url: `/api/statements/${statement.id}` });
+    expect(detail.json().transactions[0].matchingRule).toMatchObject({
+      id: parserRule.id,
+      categoryId: 'groceries',
+      descriptionContains: 'merchant',
+      parserId: 'activobank',
+    });
+
+    const manualOverride = await app.inject({
+      method: 'PATCH',
+      url: `/api/statements/${statement.id}/transactions/${transaction.id}`,
+      payload: { actualCategoryId: 'manual' },
+    });
+    expect(manualOverride.json().matchingRule.id).toBe(parserRule.id);
+
+    const changedDescription = await app.inject({
+      method: 'PATCH',
+      url: `/api/statements/${statement.id}/transactions/${transaction.id}`,
+      payload: { reviewedDescription: 'Unmatched description' },
+    });
+    expect(changedDescription.json().matchingRule).toBeNull();
+
     await app.close();
     await database.close();
   });

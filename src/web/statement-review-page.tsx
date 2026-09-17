@@ -10,9 +10,18 @@ interface StatementTransaction {
   description: string;
   excluded: boolean;
   id: number;
+  matchingRule: MatchingRule | null;
   reviewedAmountCents: number | null;
   reviewedDate: string | null;
   reviewedDescription: string | null;
+}
+
+interface MatchingRule {
+  categoryId: string | null;
+  descriptionContains: string;
+  excluded: boolean | null;
+  id: number;
+  parserId: string | null;
 }
 
 interface StatementDetail {
@@ -85,7 +94,19 @@ function totalCents(statement: StatementDetail, drafts: Record<number, ReviewDra
   }, 0);
 }
 
-export function StatementReviewPage() {
+function matchingRuleLabel(rule: MatchingRule, groups: CategoryGroup[]): string {
+  const effects: string[] = [];
+  if (rule.categoryId) {
+    const group = groups.find((candidate) => candidate.categories.some((category) => category.id === rule.categoryId));
+    const category = group?.categories.find((candidate) => candidate.id === rule.categoryId);
+    effects.push(category && group ? `${group.name}/${category.name}` : 'assign a category');
+  }
+  if (rule.excluded === true) effects.push('exclude transaction');
+  if (rule.excluded === false) effects.push('include transaction');
+  return `Covered by rule: description contains “${rule.descriptionContains}” → ${effects.join(', ')}`;
+}
+
+export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: number }) {
   const [statement, setStatement] = useState<StatementDetail>();
   const [drafts, setDrafts] = useState<Record<number, ReviewDraft>>({});
   const [selectedTransactionId, setSelectedTransactionId] = useState<number>();
@@ -141,7 +162,7 @@ export function StatementReviewPage() {
         setDrafts(Object.fromEntries(loaded.transactions.map((transaction) => [transaction.id, toDraft(transaction)])));
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The statement could not be loaded.'));
-  }, []);
+  }, [rulesRevision]);
 
   const readOnly = statement?.status === 'published';
   const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed';
@@ -221,6 +242,7 @@ export function StatementReviewPage() {
     void fetch('/api/categorization-rules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ categoryId: ruleCategoryId || null, descriptionContains: ruleDescription.trim(), excluded, parserId: ruleParserId || null }) })
       .then(async (response) => {
         if (!response.ok) throw new Error('The transaction rule could not be added.');
+        const createdRule = await response.json() as MatchingRule;
         const current = statement?.transactions.find((item) => item.id === ruleTransactionId);
         if (current && statement) {
           const updatedDraft = {
@@ -236,6 +258,13 @@ export function StatementReviewPage() {
             setStatement((currentStatement) => currentStatement && {
               ...currentStatement,
               transactions: currentStatement.transactions.map((item) => item.id === savedTransaction.id ? savedTransaction : item),
+            });
+          } else {
+            setStatement((currentStatement) => currentStatement && {
+              ...currentStatement,
+              transactions: currentStatement.transactions.map((item) => item.id === current.id
+                ? { ...item, matchingRule: item.matchingRule ?? createdRule }
+                : item),
             });
           }
           setDrafts((currentDrafts) => ({ ...currentDrafts, [current.id]: updatedDraft }));
@@ -375,7 +404,7 @@ export function StatementReviewPage() {
             const updatedDraft = { ...draft, excluded: !draft.excluded };
             setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
             saveInline(transaction, updatedDraft);
-          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button type="button" title="Add transaction rule" aria-label="Add transaction rule" onClick={() => openRuleDialog(transaction)}>＋</button></>}</td>
+          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button className="rule-row-button" type="button" title={transaction.matchingRule ? matchingRuleLabel(transaction.matchingRule, categoryGroups) : 'Add transaction rule'} aria-label={transaction.matchingRule ? `Add transaction rule; ${matchingRuleLabel(transaction.matchingRule, categoryGroups)}` : 'Add transaction rule'} onClick={() => openRuleDialog(transaction)}><span aria-hidden="true">＋</span>{transaction.matchingRule && <span className="rule-match-badge" aria-hidden="true">✓</span>}</button></>}</td>
         </tr>;
       })}{showOnlyUncategorized && visibleTransactions.length === 0 && <tr><td className="transaction-table-empty" colSpan={6}>No uncategorized transactions.</td></tr>}</tbody>
     </table></div>

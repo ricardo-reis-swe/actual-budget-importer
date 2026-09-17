@@ -83,6 +83,10 @@ people can use it.
 - Assigning a category does not automatically create a rule.
 - Saved rules populate categories in new statements.
   Users can change those categories during review.
+- In transaction review, indicate on each transaction's rule button when
+  its current description and statement parser are covered by a saved rule.
+  Keep this indicator independent from later manual category and inclusion
+  changes.
 
 ## Publishing to Actual Budget
 
