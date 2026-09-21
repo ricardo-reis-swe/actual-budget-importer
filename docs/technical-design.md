@@ -71,6 +71,10 @@
   only those still missing.
 - Never create another Actual Budget transaction for the same
   extracted transaction.
+- For a published transaction, use its stored Actual Budget transaction ID to
+  publish later reviewed date, description, amount, or category changes. This
+  allows a date to move outside its original lookup range without losing the
+  transaction's identity.
 
 ## Mapping transactions to Actual Budget
 
@@ -119,10 +123,15 @@
   import identifier and explicitly apply all reviewed values,
   including clearing its category when it was intentionally
   left uncategorized.
+- On repeat publication, update transactions through their stored Actual
+  Budget transaction IDs and do not run them through import again.
 - Verify every included transaction and synchronize the Actual
   Budget file before marking the statement as published.
 - If any step fails, keep the statement unpublished and allow a
   duplicate-safe retry.
+- If publishing changes to an already published statement fails, keep the
+  statement published, preserve the changed review values, and allow another
+  repeat-publication attempt.
 
 ## Currency and amount precision
 
@@ -140,12 +149,15 @@
 - Process retrieval and extraction outside the webhook request.
 - Track each statement as queued, processing, awaiting parser
   selection, ready for review, extraction failed, publishing,
-  publish failed, or published.
+  republishing, publish failed, or published.
 - Do not process the same Paperless-ngx document concurrently.
 - After an app restart, automatically resume queued or
   interrupted Paperless-ngx retrieval and extraction only.
 - Handle interrupted publishing through the Interrupted
   publishing procedure, regardless of statement source.
+- Restore a statement interrupted while republishing to published status with
+  a retryable sanitized error; its original successful publication remains
+  valid.
 - Mark direct uploads interrupted during extraction as
   extraction failed because their PDF contents are no longer
   available in memory.

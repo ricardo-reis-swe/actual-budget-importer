@@ -133,6 +133,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   const [isChangingParser, setIsChangingParser] = useState(false);
   const [parserError, setParserError] = useState<string>();
   const [showOnlyUncategorized, setShowOnlyUncategorized] = useState(false);
+  const [pendingSaveCount, setPendingSaveCount] = useState(0);
 
   useEffect(() => {
     const statementId = new URLSearchParams(window.location.search).get('statementId');
@@ -164,8 +165,9 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The statement could not be loaded.'));
   }, [rulesRevision]);
 
-  const readOnly = statement?.status === 'published';
-  const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed';
+  const published = statement?.status === 'published';
+  const readOnly = statement?.status === 'publishing' || statement?.status === 'republishing';
+  const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed' || published;
 
   if (error) return <main><p role="alert">{error}</p></main>;
   if (!statement) return <main><p>Loading statement…</p></main>;
@@ -191,10 +193,12 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
     const draft = draftOverride ?? drafts[transaction.id]!;
     const update = reviewUpdate(transaction, draft);
     if (!Object.keys(update).length || !statement) return;
+    setPendingSaveCount((count) => count + 1);
     void fetch(`/api/statements/${statement.id}/transactions/${transaction.id}`, { body: JSON.stringify(update), headers: { 'content-type': 'application/json' }, method: 'PATCH' })
       .then(async (response) => response.ok ? response.json() as Promise<StatementTransaction> : Promise.reject(new Error('Review changes could not be saved.')))
       .then((updated) => setStatement((current) => current && { ...current, transactions: current.transactions.map((item) => item.id === updated.id ? updated : item) }))
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Review changes could not be saved.'));
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Review changes could not be saved.'))
+      .finally(() => setPendingSaveCount((count) => Math.max(0, count - 1)));
   };
 
   const editCell = (transaction: StatementTransaction, field: keyof ReviewDraft) => {
@@ -204,7 +208,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   };
 
   const openRuleDialog = (transaction: StatementTransaction) => {
-    if (readOnly) return;
+    if (readOnly || published) return;
     setRuleTransactionId(transaction.id);
     setRuleDescription(drafts[transaction.id]!.description);
     setRuleCategoryId(drafts[transaction.id]!.actualCategoryId);
@@ -215,7 +219,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   };
 
   const applyRules = async () => {
-    if (!statement || readOnly) return;
+    if (!statement || readOnly || published) return;
     setIsApplyingRules(true);
     setError(undefined);
     try {
@@ -281,7 +285,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   };
 
   const openPublishDialog = async () => {
-    if (!statement || !canPublish) return;
+    if (!statement || !canPublish || pendingSaveCount > 0) return;
     setPublishDialogOpen(true);
     setPublishError(undefined);
     setSelectedAccountId(statement.actualAccount?.id ?? '');
@@ -299,7 +303,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   };
 
   const publish = async () => {
-    if (!statement || !canPublish || !selectedAccountId) return;
+    if (!statement || !canPublish || pendingSaveCount > 0 || !selectedAccountId) return;
     const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
     const destination = statement.actualAccount
       ?? (selectedAccount ? { id: selectedAccount.id, name: selectedAccount.name } : null);
@@ -374,9 +378,10 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
       <span className={`status-pill status-${statement.status.replaceAll(' ', '-')}`}>{statement.status}</span>
     </header>
     {statement.errorMessage && <p role="alert">{statement.errorMessage}</p>}
-    {readOnly && <p role="status">This statement has been published and is read-only.</p>}
+    {published && <p role="status">This statement has been published. You can edit transaction details and categories, then publish the changes to Actual Budget. Inclusion choices are locked.</p>}
+    {readOnly && <p role="status">This statement is being published and cannot be edited.</p>}
     {statement.actualAccount && <p role="status">Destination account: <strong>{statement.actualAccount.name ?? statement.actualAccount.id}</strong></p>}
-    {!readOnly && <section className="parser-assignment" aria-labelledby="statement-parser-heading">
+    {!readOnly && !published && <section className="parser-assignment" aria-labelledby="statement-parser-heading">
       <div><h2 id="statement-parser-heading">Statement parser</h2><p>{statement.parserId ? 'Choose another parser to re-extract this statement.' : 'Choose a parser to extract this Paperless-ngx statement.'}</p></div>
       <label>Parser<select value={selectedParserId} onChange={(event) => { setSelectedParserId(event.target.value); setParserError(undefined); }}>
         <option value="">Select a parser</option>
@@ -388,7 +393,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
       {parserError && <p role="alert">{parserError}</p>}
     </section>}
     <section className="review-summary" aria-label="Review summary"><div><strong>{statement.transactions.length}</strong><span>Transactions</span></div><div><strong>{statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded).length}</strong><span>Included</span></div><div><strong>{formatCents(totalCents(statement, drafts))}</strong><span>Included total</span></div></section>
-    <div className="review-actions"><label className="transaction-filter"><input type="checkbox" checked={showOnlyUncategorized} onChange={(event) => setShowOnlyUncategorized(event.target.checked)} />Show only uncategorized</label><div className="review-action-buttons">{!readOnly && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={() => void openPublishDialog()} disabled={isPublishing}>{isPublishing ? 'Publishing…' : 'Publish statement'}</button>}</div></div>
+    <div className="review-actions"><label className="transaction-filter"><input type="checkbox" checked={showOnlyUncategorized} onChange={(event) => setShowOnlyUncategorized(event.target.checked)} />Show only uncategorized</label><div className="review-action-buttons">{!readOnly && !published && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={() => void openPublishDialog()} disabled={isPublishing || pendingSaveCount > 0}>{isPublishing ? 'Publishing…' : pendingSaveCount > 0 ? 'Saving changes…' : published ? 'Publish changes' : 'Publish statement'}</button>}</div></div>
     {rulesFeedback && <p className="rules-feedback" role="status">{rulesFeedback}</p>}
     <div className="transaction-table-wrap"><table className="transaction-table">
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>
@@ -400,7 +405,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
         return <tr className={isEditing ? 'transaction-row-selected' : undefined} key={transaction.id}>
           <td>{cell('date', draft.date)}</td><td>{cell('description', draft.description)}</td><td>{cell('amountCents', formatCents(Number(draft.amountCents)))}</td>
           <td className="category-cell"><GroupedCategorySelect ariaLabel={`Category for ${draft.description}`} disabled={readOnly} emptyLabel="Uncategorized" fillRemainingViewport groups={categoryGroups} value={draft.actualCategoryId} onChange={(categoryId) => selectCategory(transaction, categoryId)} /></td><td>{draft.excluded ? 'No' : 'Yes'}</td>
-          <td className="row-actions">{!readOnly && <><button type="button" title={draft.excluded ? 'Include transaction' : 'Exclude transaction'} onClick={() => {
+          <td className="row-actions">{!readOnly && !published && <><button type="button" title={draft.excluded ? 'Include transaction' : 'Exclude transaction'} onClick={() => {
             const updatedDraft = { ...draft, excluded: !draft.excluded };
             setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
             saveInline(transaction, updatedDraft);
@@ -408,13 +413,13 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
         </tr>;
       })}{showOnlyUncategorized && visibleTransactions.length === 0 && <tr><td className="transaction-table-empty" colSpan={6}>No uncategorized transactions.</td></tr>}</tbody>
     </table></div>
-    {publishDialogOpen && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-dialog-title"><h2 id="publish-dialog-title">Publish statement</h2><p>Confirm the transactions and destination account before publishing.</p><form onSubmit={(event) => { event.preventDefault(); void publish(); }}>
+    {publishDialogOpen && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-dialog-title"><h2 id="publish-dialog-title">{published ? 'Publish changes' : 'Publish statement'}</h2><p>{published ? 'Confirm the updated transactions. Changes will be applied to the existing transactions in Actual Budget.' : 'Confirm the transactions and destination account before publishing.'}</p><form onSubmit={(event) => { event.preventDefault(); void publish(); }}>
       <dl className="publish-summary"><div><dt>Included</dt><dd>{includedTransactions.length}</dd></div><div><dt>Excluded</dt><dd>{statement.transactions.length - includedTransactions.length}</dd></div><div><dt>Inflows</dt><dd>{formatCents(inflowCents)}</dd></div><div><dt>Outflows</dt><dd>{formatCents(outflowCents)}</dd></div></dl>
       <label htmlFor="publish-account">Destination account<select id="publish-account" disabled={isLoadingAccounts || statement.actualAccount !== null} value={selectedAccountId} onChange={(event) => { setSelectedAccountId(event.target.value); setPublishError(undefined); }}><option value="">Select an account</option>{statement.actualAccount && !accounts.some((account) => account.id === statement.actualAccount!.id) && <option value={statement.actualAccount.id}>{statement.actualAccount.name ?? statement.actualAccount.id}</option>}{accounts.filter((account) => !account.closed).map((account) => <option key={account.id} value={account.id}>{account.name}{account.offBudget ? ' (off budget)' : ''}</option>)}</select></label>
       {statement.actualAccount && <p>This account is locked because a publication attempt has already started.</p>}
       {isLoadingAccounts && <p role="status">Loading accounts…</p>}
       {publishError && <p role="alert">{publishError}</p>}
-      <div className="dialog-actions"><button type="button" className="secondary-button" disabled={isPublishing} onClick={() => setPublishDialogOpen(false)}>Cancel</button><button type="submit" disabled={isPublishing || isLoadingAccounts || !selectedAccountId || Boolean(publishError)}>{isPublishing ? 'Publishing…' : 'Confirm and publish'}</button></div>
+      <div className="dialog-actions"><button type="button" className="secondary-button" disabled={isPublishing} onClick={() => setPublishDialogOpen(false)}>Cancel</button><button type="submit" disabled={isPublishing || isLoadingAccounts || pendingSaveCount > 0 || !selectedAccountId || Boolean(publishError)}>{isPublishing ? 'Publishing…' : pendingSaveCount > 0 ? 'Saving changes…' : published ? 'Confirm and publish changes' : 'Confirm and publish'}</button></div>
     </form></section></div>}
     {ruleTransactionId && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rule-dialog-title"><h2 id="rule-dialog-title">Create transaction rule</h2><p>Choose what should happen when a transaction description contains this text.</p><form onSubmit={(event) => { event.preventDefault(); addRule(applyRuleToStatement); }}><label htmlFor="rule-description">Description contains<input autoFocus id="rule-description" value={ruleDescription} onChange={(event) => setRuleDescription(event.target.value)} /></label><label htmlFor="rule-category">Category<GroupedCategorySelect id="rule-category" emptyLabel="Leave category unchanged" groups={categoryGroups} value={ruleCategoryId} onChange={setRuleCategoryId} /></label><label htmlFor="rule-inclusion">Publishing<select id="rule-inclusion" value={ruleInclusion} onChange={(event) => setRuleInclusion(event.target.value)}><option value="">Leave inclusion unchanged</option><option value="include">Include transaction</option><option value="exclude">Exclude transaction</option></select></label><label htmlFor="rule-scope">Apply rule to<select id="rule-scope" value={ruleParserId} onChange={(event) => setRuleParserId(event.target.value)}><option value="">All statements</option>{statement.parserId && <option value={statement.parserId}>Only {statement.parserId} statements</option>}</select></label><label className="rule-apply-to-statement"><input type="checkbox" checked={applyRuleToStatement} onChange={(event) => setApplyRuleToStatement(event.target.checked)} />Run new rule on the entire statement</label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => { setRuleTransactionId(undefined); setRuleDescription(''); setRuleCategoryId(''); setRuleInclusion(''); setRuleParserId(''); setApplyRuleToStatement(true); }}>Cancel</button><button type="submit" disabled={!ruleDescription.trim() || (!ruleCategoryId && !ruleInclusion)}>Create rule</button></div></form></section></div>}
   </main>;

@@ -491,7 +491,7 @@ describe('server baseline', () => {
     await database.close();
   });
 
-  it('saves validated review changes and protects published statements', async () => {
+  it('allows published transaction corrections while keeping inclusion locked', async () => {
     const { app, database, statement, transaction } = await createStatementServer();
 
     const update = await app.inject({
@@ -508,10 +508,20 @@ describe('server baseline', () => {
     const publishedUpdate = await app.inject({
       method: 'PATCH',
       url: `/api/statements/${statement.id}/transactions/${transaction.id}`,
+      payload: { actualCategoryId: 'corrected-category', reviewedDescription: 'Corrected merchant' },
+    });
+    expect(publishedUpdate.statusCode).toBe(200);
+    expect(publishedUpdate.json()).toMatchObject({
+      actualCategoryId: 'corrected-category', reviewedDescription: 'Corrected merchant', excluded: true,
+    });
+
+    const inclusionUpdate = await app.inject({
+      method: 'PATCH',
+      url: `/api/statements/${statement.id}/transactions/${transaction.id}`,
       payload: { excluded: false },
     });
-    expect(publishedUpdate.statusCode).toBe(400);
-    expect(publishedUpdate.json()).toEqual({ message: 'Published statements cannot be edited.' });
+    expect(inclusionUpdate.statusCode).toBe(400);
+    expect(inclusionUpdate.json()).toEqual({ message: 'Transaction inclusion cannot be changed after the statement is published.' });
     await app.close();
     await database.close();
   });

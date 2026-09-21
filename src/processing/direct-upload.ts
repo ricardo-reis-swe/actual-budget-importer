@@ -100,7 +100,7 @@ export class DirectUploadProcessor {
     if (!confirmed) throw new DirectUploadError('PARSER_CHANGE_REQUIRES_CONFIRMATION');
     this.validatePdfSize(pdf);
     const statement = await this.requireDirectUpload(statementId);
-    if (statement.status === 'published') throw new DirectUploadError('STATEMENT_READ_ONLY');
+    if (statement.status === 'published' || statement.status === 'republishing') throw new DirectUploadError('STATEMENT_READ_ONLY');
     this.requireMatchingPdf(statement.content_hash, pdf);
     const parser = this.requireParser(parserId);
     await this.database.transaction().execute(async (transaction) => {

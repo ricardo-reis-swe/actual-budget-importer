@@ -49,7 +49,7 @@ export class PaperlessStatementProcessor {
 
   async selectParser(statementId: number, parserId: string, confirmed = false): Promise<void> {
     const statement = await this.requirePaperless(statementId);
-    if (statement.status === 'published') throw new PaperlessStatementError('STATEMENT_READ_ONLY');
+    if (statement.status === 'published' || statement.status === 'republishing') throw new PaperlessStatementError('STATEMENT_READ_ONLY');
     const parser = this.requireParser(parserId);
     const transaction = await this.database.selectFrom('statement_transactions').select('id')
       .where('statement_id', '=', statementId).limit(1).executeTakeFirst();

@@ -11,6 +11,7 @@ export type StatementStatus =
   | 'ready for review'
   | 'extraction failed'
   | 'publishing'
+  | 'republishing'
   | 'publish failed'
   | 'published';
 

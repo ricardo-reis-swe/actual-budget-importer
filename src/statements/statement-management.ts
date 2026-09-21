@@ -194,8 +194,11 @@ export class StatementManagement {
     if (!statement) {
       return undefined;
     }
-    if (statement.status === 'published' || statement.status === 'publishing') {
+    if (statement.status === 'publishing' || statement.status === 'republishing') {
       throw new StatementManagementError('STATEMENT_READ_ONLY');
+    }
+    if (statement.status === 'published' && update.excluded !== undefined) {
+      throw new StatementManagementError('PUBLISHED_INCLUSION_LOCKED');
     }
 
     const values: Record<string, string | number | null> = {};
@@ -249,7 +252,7 @@ export class StatementManagement {
       .where('id', '=', statementId)
       .executeTakeFirst();
     if (!statement) return undefined;
-    if (statement.status === 'published' || statement.status === 'publishing') {
+    if (statement.status === 'published' || statement.status === 'publishing' || statement.status === 'republishing') {
       throw new StatementManagementError('STATEMENT_READ_ONLY');
     }
 
@@ -299,7 +302,7 @@ export class StatementManagement {
     if (!statement) {
       return false;
     }
-    if (statement.status === 'processing' || statement.status === 'publishing') {
+    if (statement.status === 'processing' || statement.status === 'publishing' || statement.status === 'republishing') {
       throw new StatementManagementError('STATEMENT_BUSY');
     }
     await this.database.deleteFrom('statements').where('id', '=', statementId).execute();
@@ -316,7 +319,7 @@ function sortableDate(date: string): string {
 }
 
 export class StatementManagementError extends Error {
-  constructor(readonly code: 'EMPTY_REVIEW_UPDATE' | 'STATEMENT_BUSY' | 'STATEMENT_READ_ONLY') {
+  constructor(readonly code: 'EMPTY_REVIEW_UPDATE' | 'PUBLISHED_INCLUSION_LOCKED' | 'STATEMENT_BUSY' | 'STATEMENT_READ_ONLY') {
     super(code);
   }
 }

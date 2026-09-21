@@ -157,6 +157,74 @@ describe('statement publishing', () => {
     await database.close();
   });
 
+  it('publishes corrections through the stored Actual transaction ID without importing again', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    await database.db.updateTable('statements').set({
+      actual_account_id: 'account-1',
+      actual_account_name: 'Current account',
+      status: 'published',
+    }).where('id', '=', statement.id).execute();
+    await database.db.updateTable('statement_transactions').set({
+      actual_category_id: 'corrected-category',
+      reviewed_amount_cents: -1400,
+      reviewed_date: '15-08-2026',
+      reviewed_description: 'Corrected grocer',
+    }).where('id', '=', statement.transactionId).execute();
+    await database.db.insertInto('publication_records').values({
+      actual_transaction_id: 'actual-existing',
+      published_at: '2026-01-02T00:00:00.000Z',
+      statement_transaction_id: statement.transactionId,
+    }).execute();
+    const actualBudget = {
+      importTransactions: vi.fn(),
+      findTransactions: vi.fn(),
+      resolvePayee: vi.fn().mockResolvedValue('payee-corrected'),
+      synchronize: vi.fn().mockResolvedValue(undefined),
+      updateTransaction: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new StatementPublisher(database.db, actualBudget, () => new Date('2026-08-16T00:00:00.000Z'))
+      .publish(statement.id, destinationAccount);
+
+    expect(actualBudget.importTransactions).not.toHaveBeenCalled();
+    expect(actualBudget.findTransactions).not.toHaveBeenCalled();
+    expect(actualBudget.updateTransaction).toHaveBeenCalledWith('actual-existing', expect.objectContaining({
+      amount: -1400,
+      category: 'corrected-category',
+      date: '2026-08-15',
+      payee: 'payee-corrected',
+    }));
+    await expect(database.db.selectFrom('statements').select('status').where('id', '=', statement.id).executeTakeFirstOrThrow())
+      .resolves.toEqual({ status: 'published' });
+    await database.close();
+  });
+
+  it('keeps a statement published when publishing corrections fails', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    await database.db.updateTable('statements').set({
+      actual_account_id: 'account-1', actual_account_name: 'Current account', status: 'published',
+    }).where('id', '=', statement.id).execute();
+    await database.db.insertInto('publication_records').values({
+      actual_transaction_id: 'actual-existing',
+      published_at: '2026-01-02T00:00:00.000Z',
+      statement_transaction_id: statement.transactionId,
+    }).execute();
+    const publisher = new StatementPublisher(database.db, {
+      importTransactions: vi.fn(), findTransactions: vi.fn(),
+      resolvePayee: vi.fn().mockResolvedValue('payee-1'),
+      synchronize: vi.fn(),
+      updateTransaction: vi.fn().mockRejectedValue(new Error('synthetic correction failure')),
+    });
+
+    await expect(publisher.publish(statement.id, destinationAccount)).rejects.toThrow('synthetic correction failure');
+
+    await expect(database.db.selectFrom('statements').select(['error_message', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow())
+      .resolves.toMatchObject({ status: 'published', error_message: expect.stringContaining('publishing failed') });
+    await database.close();
+  });
+
   it('marks interrupted publishing as a retryable publish failure after restart', async () => {
     const database = await createDatabase();
     const statement = await readyStatement(database);
@@ -169,6 +237,21 @@ describe('statement publishing', () => {
 
     await expect(database.db.selectFrom('statements').select(['error_message', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow())
       .resolves.toMatchObject({ status: 'publish failed', error_message: expect.stringContaining('publishing failed') });
+    await database.close();
+  });
+
+  it('restores interrupted repeat publication to published for a retry', async () => {
+    const database = await createDatabase();
+    const statement = await readyStatement(database);
+    await database.db.updateTable('statements').set({ status: 'republishing' }).where('id', '=', statement.id).execute();
+    const publisher = new StatementPublisher(database.db, {
+      importTransactions: vi.fn(), findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
+    });
+
+    await publisher.recoverInterruptedPublishing();
+
+    await expect(database.db.selectFrom('statements').select(['error_message', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow())
+      .resolves.toMatchObject({ status: 'published', error_message: expect.stringContaining('publishing failed') });
     await database.close();
   });
 

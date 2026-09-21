@@ -250,7 +250,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
             ? 'Statement not found.'
             : error.code === 'STATEMENT_BUSY'
               ? 'This statement is already publishing.'
-              : 'Only a statement ready for review can be published.';
+              : 'Only a statement ready for review, a failed publication, or a published statement can be published.';
           return reply.code(error.code === 'STATEMENT_NOT_FOUND' ? 404 : 400).send({ message });
         }
         throw error;
@@ -844,8 +844,10 @@ function statementManagementError(reply: { code(statusCode: number): { send(payl
   if (error instanceof StatementManagementError) {
     const message = error.code === 'STATEMENT_BUSY'
       ? 'The statement cannot be deleted while processing or publishing.'
+      : error.code === 'PUBLISHED_INCLUSION_LOCKED'
+        ? 'Transaction inclusion cannot be changed after the statement is published.'
       : error.code === 'STATEMENT_READ_ONLY'
-        ? 'Published statements cannot be edited.'
+        ? 'The statement cannot be edited while publishing.'
         : 'The statement review update is invalid.';
     return reply.code(400).send({ message });
   }

@@ -391,12 +391,18 @@ people can use it.
 
 ## Published statements
 
-- Make a statement read-only after it is successfully
-  published.
-- Do not allow a published statement to be published again.
-- Continue showing its extracted transactions, categories,
-  exclusions, and publication status.
-- Any later transaction corrections are made in Actual Budget.
+- Let users edit the reviewed date, description, amount, and category of
+  transactions after a statement is successfully published.
+- Keep transaction inclusion and exclusion choices read-only after the first
+  successful publication.
+- Let the user publish those changes again to the statement's permanently
+  associated Actual Budget account.
+- Update the existing Actual Budget transactions when changes are published;
+  do not create duplicate transactions.
+- Keep the statement published and preserve the edited review data if
+  publishing later changes fails, then let the user retry.
+- Continue showing its extracted transactions, categories, exclusions, and
+  publication status.
 
 ## Managing categorization rules
 
@@ -472,6 +478,8 @@ people can use it.
   in the confirmation.
 - Disable editing and repeated Publish actions while publishing
   is in progress.
+- On a published statement, label the action **Publish changes** and keep its
+  previously selected destination account locked.
 
 ## Category synchronization
 

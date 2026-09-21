@@ -27,7 +27,7 @@ export class ApplicationDatabase {
         .updateTable('statements')
         .set({ actual_account_id: legacyActualAccountId })
         .where('actual_account_id', 'is', null)
-        .where('status', 'in', ['published', 'publishing', 'publish failed'])
+        .where('status', 'in', ['published', 'publishing', 'republishing', 'publish failed'])
         .execute();
     }
   }

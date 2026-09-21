@@ -43,8 +43,11 @@ export class StatementPublisher {
   async publish(statementId: number, destinationAccount: { id: string; name: string }): Promise<void> {
     if (this.publishing.has(statementId)) throw new StatementPublicationError('STATEMENT_BUSY');
     this.publishing.add(statementId);
+    let wasPublished = false;
     try {
-      const accountId = await this.claim(statementId, destinationAccount);
+      const claim = await this.claim(statementId, destinationAccount);
+      const { accountId } = claim;
+      wasPublished = claim.wasPublished;
       const transactions = await this.database
         .selectFrom('statement_transactions')
         .selectAll()
@@ -62,7 +65,7 @@ export class StatementPublisher {
           .execute();
         const recordsByTransactionId = new Map(publicationRecords.map((record) => [record.statement_transaction_id, record]));
         const pending = includedTransactions
-          .filter((transaction) => !recordsByTransactionId.has(transaction.id))
+          .filter((transaction) => !recordsByTransactionId.get(transaction.id)?.actual_transaction_id)
           .map((transaction) => ({
           amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
           category: transaction.actual_category_id,
@@ -85,22 +88,26 @@ export class StatementPublisher {
           notes: '',
           payee_name: transaction.reviewed_description ?? transaction.description,
         }));
-        const dates = reviewedTransactions.map(({ date }) => date).sort();
-        const actualTransactions = await this.actualBudget.findTransactions(accountId, dates[0]!, dates[dates.length - 1]!);
+        const pendingImportIds = new Set(pending.map((transaction) => transaction.imported_id));
+        const pendingReviewed = reviewedTransactions.filter(({ transaction }) => pendingImportIds.has(transaction.stable_import_id));
+        const dates = pendingReviewed.map(({ date }) => date).sort();
+        const actualTransactions = dates.length > 0
+          ? await this.actualBudget.findTransactions(accountId, dates[0]!, dates[dates.length - 1]!)
+          : [];
         const byImportId = new Map(actualTransactions
           .filter((transaction) => transaction.imported_id)
           .map((transaction) => [transaction.imported_id!, transaction]));
 
         for (const reviewed of reviewedTransactions) {
           const { transaction } = reviewed;
-          const actual = byImportId.get(transaction.stable_import_id);
-          if (!actual) {
-            const record = recordsByTransactionId.get(transaction.id);
-            if (record?.actual_transaction_id) throw new Error('A previously published Actual Budget transaction is no longer available.');
+          const record = recordsByTransactionId.get(transaction.id);
+          const actualTransactionId = record?.actual_transaction_id
+            ?? byImportId.get(transaction.stable_import_id)?.id;
+          if (!actualTransactionId) {
             throw new Error('Actual Budget did not reconcile an imported transaction.');
           }
           const payee = await this.actualBudget.resolvePayee(reviewed.payee_name);
-          await this.actualBudget.updateTransaction(actual.id, {
+          await this.actualBudget.updateTransaction(actualTransactionId, {
             amount: reviewed.amount,
             category: reviewed.category ?? null,
             cleared: true,
@@ -112,12 +119,12 @@ export class StatementPublisher {
           await this.database
             .insertInto('publication_records')
             .values({
-              actual_transaction_id: actual.id,
+              actual_transaction_id: actualTransactionId,
               published_at: this.now().toISOString(),
               statement_transaction_id: transaction.id,
             })
             .onConflict((conflict) => conflict.column('statement_transaction_id').doUpdateSet({
-              actual_transaction_id: actual.id,
+              actual_transaction_id: actualTransactionId,
               published_at: this.now().toISOString(),
             }))
             .execute();
@@ -138,7 +145,7 @@ export class StatementPublisher {
         .set({
           diagnostic_id: failure.diagnosticId,
           error_message: toUserFailure(failure).message,
-          status: 'publish failed',
+          status: wasPublished ? 'published' : 'publish failed',
           updated_at: this.now().toISOString(),
         })
         .where('id', '=', statementId)
@@ -152,8 +159,8 @@ export class StatementPublisher {
   async recoverInterruptedPublishing(): Promise<void> {
     const interrupted = await this.database
       .selectFrom('statements')
-      .select('id')
-      .where('status', '=', 'publishing')
+      .select(['id', 'status'])
+      .where('status', 'in', ['publishing', 'republishing'])
       .execute();
     for (const statement of interrupted) {
       const failure = createSanitizedFailure(undefined, 'publishing', randomUUID());
@@ -162,7 +169,7 @@ export class StatementPublisher {
         .set({
           diagnostic_id: failure.diagnosticId,
           error_message: toUserFailure(failure).message,
-          status: 'publish failed',
+          status: statement.status === 'republishing' ? 'published' : 'publish failed',
           updated_at: this.now().toISOString(),
         })
         .where('id', '=', statement.id)
@@ -170,37 +177,38 @@ export class StatementPublisher {
     }
   }
 
-  private async claim(statementId: number, destinationAccount: { id: string; name: string }): Promise<string> {
+  private async claim(statementId: number, destinationAccount: { id: string; name: string }): Promise<{ accountId: string; wasPublished: boolean }> {
     const statement = await this.database
       .selectFrom('statements')
       .select(['actual_account_id', 'status'])
       .where('id', '=', statementId)
       .executeTakeFirst();
     if (!statement) throw new StatementPublicationError('STATEMENT_NOT_FOUND');
-    if (statement.status === 'publishing') throw new StatementPublicationError('STATEMENT_BUSY');
-    if (!['ready for review', 'publish failed'].includes(statement.status)) {
+    if (statement.status === 'publishing' || statement.status === 'republishing') throw new StatementPublicationError('STATEMENT_BUSY');
+    if (!['ready for review', 'publish failed', 'published'].includes(statement.status)) {
       throw new StatementPublicationError('STATEMENT_NOT_READY');
     }
     if (statement.actual_account_id !== null && statement.actual_account_id !== destinationAccount.id) {
       throw new StatementPublicationError('ACCOUNT_MISMATCH');
     }
     const accountId = statement.actual_account_id ?? destinationAccount.id;
+    const wasPublished = statement.status === 'published';
     const updated = await this.database
       .updateTable('statements')
       .set({
         ...(statement.actual_account_id === null
           ? { actual_account_id: destinationAccount.id, actual_account_name: destinationAccount.name }
           : {}),
-        status: 'publishing',
+        status: wasPublished ? 'republishing' : 'publishing',
         updated_at: this.now().toISOString(),
       })
       .where('id', '=', statementId)
-      .where('status', 'in', ['ready for review', 'publish failed'])
+      .where('status', 'in', ['ready for review', 'publish failed', 'published'])
       .execute();
     if (Number(updated[0]?.numUpdatedRows ?? 0) !== 1) {
       throw new StatementPublicationError('STATEMENT_BUSY');
     }
-    return accountId;
+    return { accountId, wasPublished };
   }
 }
 
