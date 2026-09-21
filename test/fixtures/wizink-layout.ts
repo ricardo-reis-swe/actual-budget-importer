@@ -4,6 +4,7 @@ export const wizinkRegressionRows = [
   ['02-08-2026', 'Reembolso do comerciante', '12,34'],
   ['03/08/2026', 'Grocer', '1.234,56 D'],
   ['04/08/2026', 'Pagamento mensal', '100,00'],
+  ['05/08/2026', 'Synthetic card payment', '-250,00'],
 ] as const;
 
 export const wizinkMalformedAmountRows = [

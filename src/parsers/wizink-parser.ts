@@ -8,7 +8,6 @@ import {
 
 const transactionDate = /^(\d{2})[/-](\d{2})[/-](\d{2,4})$/;
 const nonTransactionRow = /^(?:data|date|descri[cç][aã]o|montante|movimentos?|total|p[aá]gina)\b/i;
-const creditDescription = /\b(?:cr[eé]dito|devolu[cç][aã]o|estorno|reembolso|pagamento)\b/i;
 
 /** Parser for WiZink Portugal credit-card statement layouts. */
 export const wizinkParser: BankParser = {
@@ -67,7 +66,7 @@ export function parseWiZinkRows(
       position: transactions.length,
       date,
       description,
-      amountCents: applyStatementDirection(amountCents, rawAmount, description),
+      amountCents: -amountCents,
     });
   }
 
@@ -106,10 +105,4 @@ function parseAmountCents(value: string): number | undefined {
   const cents = Number(whole.replace(/[.,]/g, '')) * 100 + Number(fraction);
   if (!Number.isSafeInteger(cents)) return undefined;
   return match[1] || normalized.endsWith('-') ? -cents : cents;
-}
-
-function applyStatementDirection(amountCents: number, rawAmount: string, description: string): number {
-  if (amountCents < 0) return amountCents;
-  if (/\bC\s*$/i.test(rawAmount) || creditDescription.test(description)) return amountCents;
-  return -amountCents;
 }
