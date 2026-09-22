@@ -11,84 +11,28 @@ body:
       value: |
         Thanks for helping Actual Budget Importer support another bank.
 
-        This is a public repository. Do not upload a real statement or include real names, addresses, account numbers, transactions, barcodes, QR codes, or other personal or financial information. Covering real content with shapes is not safe because the original PDF text may remain extractable. Create the fixture with synthetic information throughout.
+        Do not attach a real or visually redacted statement. Use fake information throughout.
 
   - type: input
     id: bank
     attributes:
-      label: Bank name
-      description: Include the brand or subsidiary shown on the statement.
-      placeholder: Example Bank
-    validations:
-      required: true
-
-  - type: input
-    id: country
-    attributes:
-      label: Country
-      description: Enter the country where this statement format is issued.
-      placeholder: Singapore
+      label: Bank and country
+      placeholder: POSB — Singapore
     validations:
       required: true
 
   - type: input
     id: statement_type
     attributes:
-      label: Account and statement type
-      description: Identify the account and statement variant as precisely as possible.
-      placeholder: Personal current account monthly e-statement
-    validations:
-      required: true
-
-  - type: input
-    id: source
-    attributes:
-      label: How the PDF was obtained
-      description: Explain how the statement PDF was generated or downloaded.
-      placeholder: Downloaded from online banking as the original PDF
-    validations:
-      required: true
-
-  - type: textarea
-    id: related_layouts
-    attributes:
-      label: Related brands or layouts
-      description: Note whether related bank brands or account types use the same layout, if known.
-      placeholder: POSB and DBS appear to use the same layout for this statement type.
-
-  - type: textarea
-    id: representative_cases
-    attributes:
-      label: Representative cases in the fixture
-      description: List the transaction and layout cases represented by the synthetic PDF.
-      placeholder: |
-        - Incoming transfer
-        - Card purchase
-        - Multiple transactions on one date
-        - Multiline description
-        - Page break with carried-forward balance
-    validations:
-      required: true
+      label: Statement type
+      placeholder: Personal savings account e-statement
 
   - type: textarea
     id: synthetic_pdf
     attributes:
       label: Synthetic statement PDF
-      description: Drag a newly created, fully synthetic PDF here. Preserve the real statement's structure and layout without copying any real personal or financial data.
+      description: Drag a newly created PDF with fake information into this field.
       placeholder: Drag the synthetic PDF into this field.
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected_transactions
-    attributes:
-      label: Expected transactions
-      description: List every transaction expected from the synthetic PDF. Use the exact date, description, and signed amount shown in the fixture; use + for money entering the account and - for money leaving it.
-      placeholder: |
-        | Date | Description | Signed amount |
-        | --- | --- | ---: |
-        | 2026-01-03 | Synthetic salary | +1000.00 |
-        | 2026-01-04 | Synthetic card purchase | -12.34 |
     validations:
       required: true
 
@@ -97,13 +41,5 @@ body:
     attributes:
       label: Privacy confirmation
       options:
-        - label: The attached PDF and expected output contain only synthetic information and no real personal or financial data.
+        - label: The attached PDF contains only synthetic information and no real personal or financial data.
           required: true
-        - label: I created the fixture with synthetic content throughout and did not hide real PDF content with overlays, shapes, or annotations.
-          required: true
-
-  - type: textarea
-    id: additional_context
-    attributes:
-      label: Additional context
-      description: Add any other details that may help implement or verify the parser.
