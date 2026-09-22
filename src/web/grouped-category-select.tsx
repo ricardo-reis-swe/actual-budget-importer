@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { KeyboardEvent, ReactNode } from 'react';
 
+const CATEGORY_MENU_MIN_HEIGHT = 192;
+const CATEGORY_MENU_VIEWPORT_MARGIN = 8;
+
 export interface CategoryOption {
   deleted: boolean;
   hidden?: boolean;
@@ -59,10 +62,17 @@ export function GroupedCategorySelect({
   const toggle = () => {
     if (!open && trigger.current) {
       const bounds = trigger.current.getBoundingClientRect();
-      const top = bounds.bottom + 4;
+      const preferredTop = bounds.bottom + 4;
+      const maximumHeight = Math.max(0, window.innerHeight - (CATEGORY_MENU_VIEWPORT_MARGIN * 2));
+      const minimumHeight = Math.min(CATEGORY_MENU_MIN_HEIGHT, maximumHeight);
+      const remainingHeight = Math.max(0, window.innerHeight - preferredTop - CATEGORY_MENU_VIEWPORT_MARGIN);
+      const height = Math.max(minimumHeight, remainingHeight);
+      const top = fillRemainingViewport
+        ? Math.max(CATEGORY_MENU_VIEWPORT_MARGIN, Math.min(preferredTop, window.innerHeight - height - CATEGORY_MENU_VIEWPORT_MARGIN))
+        : preferredTop;
       setMenuPosition({
-        ...(fillRemainingViewport ? { height: Math.max(0, window.innerHeight - top - 8) } : {}),
-        left: Math.max(8, Math.min(bounds.left, window.innerWidth - Math.max(bounds.width, 240) - 8)),
+        ...(fillRemainingViewport ? { height } : {}),
+        left: Math.max(CATEGORY_MENU_VIEWPORT_MARGIN, Math.min(bounds.left, window.innerWidth - Math.max(bounds.width, 240) - CATEGORY_MENU_VIEWPORT_MARGIN)),
         top,
         width: Math.max(bounds.width, 240),
       });
@@ -72,6 +82,9 @@ export function GroupedCategorySelect({
 
   useEffect(() => {
     if (!open) return;
+    const frame = requestAnimationFrame(() => {
+      menu.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.scrollIntoView({ block: 'center' });
+    });
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!trigger.current?.contains(target) && !menu.current?.contains(target)) close();
@@ -84,11 +97,12 @@ export function GroupedCategorySelect({
     window.addEventListener('resize', close);
     window.addEventListener('scroll', closeOnOutsideScroll, true);
     return () => {
+      cancelAnimationFrame(frame);
       document.removeEventListener('pointerdown', closeOutside);
       window.removeEventListener('resize', close);
       window.removeEventListener('scroll', closeOnOutsideScroll, true);
     };
-  }, [open]);
+  }, [open, value]);
 
   const choose = (categoryId: string) => {
     onChange(categoryId);
@@ -118,7 +132,10 @@ export function GroupedCategorySelect({
       if (event.key !== 'ArrowDown') return;
       event.preventDefault();
       if (!open) toggle();
-      requestAnimationFrame(() => menu.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus());
+      requestAnimationFrame(() => {
+        const selectedOption = menu.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]');
+        (selectedOption ?? menu.current?.querySelector<HTMLButtonElement>('[role="option"]'))?.focus();
+      });
     }}>
       <span>{selected ? <CategoryPathLabel categoryId={value} groups={groups} /> : emptyLabel}</span><span className="category-picker-arrow" aria-hidden="true">▾</span>
     </button>
