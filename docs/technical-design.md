@@ -133,14 +133,14 @@
   statement published, preserve the changed review values, and allow another
   repeat-publication attempt.
 
-## Currency and amount precision
+## Amount precision
 
-- Initially support statements whose transactions are in euros.
-- Store monetary amounts as integer cents and never as
-  floating-point values.
-- Do not perform currency conversion.
-- Treat an amount that cannot be parsed unambiguously to cents
-  as an extraction error requiring review or retry.
+- Keep the importer currency-agnostic. Do not store or send currency
+  metadata, and do not perform currency conversion.
+- Store amounts as signed integers in Actual Budget's amount representation
+  and never as floating-point values.
+- Treat an amount that cannot be parsed unambiguously into that integer
+  representation as an extraction error requiring review or retry.
 
 ## Statement processing lifecycle
 
@@ -287,7 +287,7 @@
 ## Testing
 
 - Use synthetic statements and mocked integrations in tests.
-- Cover extraction, exact cent amounts, categorization rules,
+- Cover extraction, exact integer amounts, categorization rules,
   review validation, and exclusions.
 - Verify duplicate deliveries preserve review changes.
 - Verify publishing failures and retries do not create
