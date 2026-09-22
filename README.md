@@ -121,7 +121,8 @@ A parser receives PDF bytes in memory and returns transactions in the
 statement's original order. Every row must include a zero-based `position`, a
 `DD-MM-YYYY` date, a description, and a signed integer `amountCents` value.
 Negative amounts are outflows and positive amounts are inflows. Parsers must
-not access the database, credentials, Paperless-ngx, or Actual Budget.
+not attach currency metadata or convert currencies. They must not access the
+database, credentials, Paperless-ngx, or Actual Budget.
 
 To add a parser:
 

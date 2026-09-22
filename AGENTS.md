@@ -28,6 +28,11 @@
 - Keep code comments only when they provide necessary context that
   the code itself cannot clearly express.
 
+## Currency handling
+
+- Keep the importer currency-agnostic. Store and send signed integer
+  amounts without currency metadata or conversion.
+
 ## Required specifications
 
 - Read `docs/product-spec.md` and `docs/technical-design.md`
