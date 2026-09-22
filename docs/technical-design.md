@@ -168,6 +168,8 @@
 
 - Give every bank parser a stable internal ID and a
   human-readable name.
+- Give every bank parser an ISO 3166-1 alpha-2 country code and an
+  English country name for grouping in parser settings.
 - Use one shared parser interface that receives PDF data and
   returns extracted transaction rows.
 - Keep bank-specific extraction logic isolated from the rest of
@@ -180,6 +182,9 @@
   general statement workflow.
 - Persist per-parser dropdown visibility in SQLite, defaulting new
   parsers to visible.
+- Persist parser-setup completion in application settings.
+- Provide an atomic parser-selection API operation that saves the
+  enabled parser IDs and marks initial parser setup complete.
 - Expose installed parser visibility and known Paperless
   correspondent mappings through parser-settings API endpoints.
 

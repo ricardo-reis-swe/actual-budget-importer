@@ -69,7 +69,7 @@ export interface ServerOptions {
   paperlessLifecycle?: PaperlessStatementLifecycle;
   paperlessControls?: PaperlessStatementControls;
   publisher?: StatementPublisher;
-  parsers?: readonly Pick<BankParser, 'id' | 'name'>[];
+  parsers?: readonly Pick<BankParser, 'countryCode' | 'countryName' | 'id' | 'name'>[];
   parserSettings?: ParserSettings;
   statements?: StatementManagement;
 }
@@ -102,7 +102,20 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     app.get('/api/parser-settings', async () => ({
       correspondents: await options.parserSettings!.listCorrespondents(),
       parsers: await options.parserSettings!.listParsers(true),
+      setupComplete: await options.parserSettings!.isSetupComplete(),
     }));
+    app.put<{ Body: unknown }>('/api/parser-settings/selection', async (request, reply) => {
+      if (!isRecord(request.body) || !Array.isArray(request.body.enabledParserIds)
+        || request.body.enabledParserIds.some((parserId) => typeof parserId !== 'string')) {
+        return reply.code(400).send({ message: 'Provide the enabled parser IDs.' });
+      }
+      try {
+        await options.parserSettings!.saveSelection(request.body.enabledParserIds);
+        return reply.code(204).send();
+      } catch (error) {
+        return parserSettingsError(reply, error);
+      }
+    });
     app.patch<{ Body: unknown; Params: { parserId: string } }>('/api/parser-settings/parsers/:parserId', async (request, reply) => {
       if (!isRecord(request.body) || typeof request.body.enabled !== 'boolean') {
         return reply.code(400).send({ message: 'Provide whether the parser should be shown.' });

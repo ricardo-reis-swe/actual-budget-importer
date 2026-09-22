@@ -4,6 +4,8 @@ import type { DatabaseSchema } from '../storage/migrations.js';
 import type { BankParser } from './bank-parser.js';
 
 export interface ParserSetting {
+  countryCode: string;
+  countryName: string;
   enabled: boolean;
   id: string;
   name: string;
@@ -22,11 +24,11 @@ export class ParserSettingsError extends Error {
 }
 
 export class ParserSettings {
-  private readonly parsers: ReadonlyMap<string, Pick<BankParser, 'id' | 'name'>>;
+  private readonly parsers: ReadonlyMap<string, Pick<BankParser, 'countryCode' | 'countryName' | 'id' | 'name'>>;
 
   constructor(
     private readonly database: Kysely<DatabaseSchema>,
-    parsers: readonly Pick<BankParser, 'id' | 'name'>[],
+    parsers: readonly Pick<BankParser, 'countryCode' | 'countryName' | 'id' | 'name'>[],
     private readonly paperless?: { getCorrespondentName(correspondentId: number): Promise<string> },
   ) {
     this.parsers = new Map(parsers.map((parser) => [parser.id, parser]));
@@ -50,6 +52,35 @@ export class ParserSettings {
       .values({ parser_id: parserId, enabled: enabled ? 1 : 0 })
       .onConflict((conflict) => conflict.column('parser_id').doUpdateSet({ enabled: enabled ? 1 : 0 }))
       .execute();
+  }
+
+  async isSetupComplete(): Promise<boolean> {
+    const setting = await this.database
+      .selectFrom('application_settings')
+      .select('value')
+      .where('key', '=', 'parser_setup_completed')
+      .executeTakeFirst();
+    return setting?.value === 'true';
+  }
+
+  async saveSelection(enabledParserIds: readonly string[]): Promise<void> {
+    const enabled = new Set(enabledParserIds);
+    for (const parserId of enabled) this.requireParser(parserId);
+
+    await this.database.transaction().execute(async (transaction) => {
+      for (const parser of this.parsers.values()) {
+        await transaction
+          .insertInto('parser_settings')
+          .values({ parser_id: parser.id, enabled: enabled.has(parser.id) ? 1 : 0 })
+          .onConflict((conflict) => conflict.column('parser_id').doUpdateSet({ enabled: enabled.has(parser.id) ? 1 : 0 }))
+          .execute();
+      }
+      await transaction
+        .insertInto('application_settings')
+        .values({ key: 'parser_setup_completed', value: 'true' })
+        .onConflict((conflict) => conflict.column('key').doUpdateSet({ value: 'true' }))
+        .execute();
+    });
   }
 
   async listCorrespondents(): Promise<CorrespondentParserMapping[]> {

@@ -18,6 +18,8 @@ const transactionDate = /^(\d{1,2})[./-](\d{2})[./-](\d{2,4})$/;
  * the sign of each amount is inferred from the running balance.
  */
 export const activoBankParser: BankParser = {
+  countryCode: 'PT',
+  countryName: 'Portugal',
   id: 'activobank',
   name: 'ActivoBank',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {

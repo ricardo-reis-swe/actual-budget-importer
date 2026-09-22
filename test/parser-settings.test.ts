@@ -13,25 +13,45 @@ describe('parser settings', () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
     const settings = new ParserSettings(database.db, [
-      { id: 'activobank', name: 'ActivoBank' },
-      { id: 'wizink', name: 'WiZink' },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
     ]);
 
     expect(await settings.listParsers()).toHaveLength(2);
     await settings.setParserEnabled('wizink', false);
 
-    expect(await settings.listParsers()).toEqual([{ id: 'activobank', name: 'ActivoBank', enabled: true }]);
+    expect(await settings.listParsers()).toEqual([{ countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank', enabled: true }]);
     expect(await settings.listParsers(true)).toEqual([
-      { id: 'activobank', name: 'ActivoBank', enabled: true },
-      { id: 'wizink', name: 'WiZink', enabled: false },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank', enabled: true },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink', enabled: false },
     ]);
+    await database.close();
+  });
+
+  it('atomically saves the selected parsers and completes initial setup', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const settings = new ParserSettings(database.db, [
+      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
+    ]);
+
+    expect(await settings.isSetupComplete()).toBe(false);
+    await settings.saveSelection(['wizink']);
+
+    expect(await settings.isSetupComplete()).toBe(true);
+    expect(await settings.listParsers()).toEqual([
+      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink', enabled: true },
+    ]);
+    await expect(settings.saveSelection(['missing'])).rejects.toMatchObject({ code: 'INVALID_PARSER' });
+    expect(await settings.listParsers()).toHaveLength(1);
     await database.close();
   });
 
   it('lists seen Paperless correspondents and saves automatic parser rules', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
-    const settings = new ParserSettings(database.db, [{ id: 'activobank', name: 'ActivoBank' }]);
+    const settings = new ParserSettings(database.db, [{ countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' }]);
     await database.db.insertInto('statements').values({
       created_at: '2026-01-01T00:00:00.000Z',
       paperless_correspondent_id: 7,
@@ -65,7 +85,7 @@ describe('parser settings', () => {
     }).execute();
     const settings = new ParserSettings(
       database.db,
-      [{ id: 'activobank', name: 'ActivoBank' }],
+      [{ countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' }],
       { getCorrespondentName: async () => 'Synthetic bank' },
     );
 

@@ -9,6 +9,7 @@ import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
 import { CategoryCreation } from '../src/categories/category-creation.js';
 import { CategorizationRules } from '../src/rules/categorization-rules.js';
 import type { BankParser } from '../src/parsers/bank-parser.js';
+import { ParserSettings } from '../src/parsers/parser-settings.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
 function multipart(fields: Record<string, string>, pdf: Buffer): { contentType: string; payload: Buffer } {
@@ -52,6 +53,34 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it('returns parser setup state and saves a complete parser selection', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const parsers = [
+      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
+    ];
+    const app = buildServer({ database, parserSettings: new ParserSettings(database.db, parsers) });
+
+    const initial = await app.inject({ method: 'GET', url: '/api/parser-settings' });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toMatchObject({ setupComplete: false, parsers });
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: '/api/parser-settings/selection',
+      payload: { enabledParserIds: ['activobank'] },
+    });
+    expect(saved.statusCode).toBe(204);
+    const visible = await app.inject({ method: 'GET', url: '/api/parsers' });
+    expect(visible.json().parsers).toEqual([{ ...parsers[0], enabled: true }]);
+    const completed = await app.inject({ method: 'GET', url: '/api/parser-settings' });
+    expect(completed.json().setupComplete).toBe(true);
+
+    await app.close();
+    await database.close();
+  });
+
   it('serves the built interface and falls back to it for browser routes', async () => {
     const frontendDirectory = mkdtempSync(join(tmpdir(), 'actual-budget-importer-frontend-'));
     writeFileSync(join(frontendDirectory, 'index.html'), '<!doctype html><title>Actual Budget Importer</title>');
@@ -304,7 +333,7 @@ describe('server baseline', () => {
   it('queues a direct PDF upload and returns existing statements for duplicate content', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
-    const parser: BankParser = { id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
+    const parser: BankParser = { countryCode: 'PT', countryName: 'Portugal', id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
     const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [parser]) });
     const boundary = 'synthetic-boundary';
     const payload = Buffer.concat([
@@ -325,7 +354,7 @@ describe('server baseline', () => {
   it('retries a failed direct upload only when the original PDF matches', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
-    const parser: BankParser = { id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
+    const parser: BankParser = { countryCode: 'PT', countryName: 'Portugal', id: 'synthetic', name: 'Synthetic', parse: vi.fn().mockResolvedValue([]) };
     const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [parser]) });
     const pdf = Buffer.from('%PDF-synthetic');
     const uploaded = multipart({ parserId: 'synthetic' }, pdf);
@@ -349,8 +378,8 @@ describe('server baseline', () => {
   it('requires confirmation and the original PDF before changing a direct upload parser', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
-    const oldParser: BankParser = { id: 'old', name: 'Old', parse: vi.fn().mockResolvedValue([]) };
-    const newParser: BankParser = { id: 'new', name: 'New', parse: vi.fn().mockResolvedValue([]) };
+    const oldParser: BankParser = { countryCode: 'PT', countryName: 'Portugal', id: 'old', name: 'Old', parse: vi.fn().mockResolvedValue([]) };
+    const newParser: BankParser = { countryCode: 'PT', countryName: 'Portugal', id: 'new', name: 'New', parse: vi.fn().mockResolvedValue([]) };
     const app = buildServer({ database, directUploads: new DirectUploadProcessor(database.db, [oldParser, newParser]) });
     const pdf = Buffer.from('%PDF-synthetic');
     const uploaded = multipart({ parserId: 'old' }, pdf);

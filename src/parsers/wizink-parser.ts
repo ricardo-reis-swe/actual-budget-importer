@@ -11,6 +11,8 @@ const nonTransactionRow = /^(?:data|date|descri[cç][aã]o|montante|movimentos?|
 
 /** Parser for WiZink Portugal credit-card statement layouts. */
 export const wizinkParser: BankParser = {
+  countryCode: 'PT',
+  countryName: 'Portugal',
   id: 'wizink',
   name: 'WiZink',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {

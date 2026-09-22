@@ -12,6 +12,8 @@ export interface BankParser {
   /** Stable internal identifier persisted with the statement. */
   readonly id: string;
   readonly name: string;
+  readonly countryCode: string;
+  readonly countryName: string;
 
   /** Extracts transaction rows from PDF bytes that are already held in memory. */
   parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]>;

@@ -471,6 +471,83 @@ form button {
     background: #fff;
     padding: 1rem;
 }
+.settings-panel + .settings-panel {
+    margin-top: 1rem;
+}
+.parser-country-list {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+.parser-country {
+    border: 1px solid #dbe3f0;
+    border-radius: 0.7rem;
+    padding: 0.6rem 0.7rem;
+}
+.parser-country-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+.parser-country-heading small {
+    color: #64748b;
+}
+.country-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: #13213a;
+    font-weight: 800;
+}
+.country-toggle input {
+    width: 1rem;
+    height: 1rem;
+}
+.parser-country-parsers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.35rem;
+    list-style: none;
+    margin: 0.55rem 0 0;
+    padding: 0;
+}
+.parser-option {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    border-radius: 0.45rem;
+    background: #f5f7fb;
+    padding: 0.4rem 0.5rem;
+    color: #334155;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+.parser-option:hover {
+    background: #eef2ff;
+}
+.parser-option input {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+}
+.parser-option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.settings-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    color: #64748b;
+    font-size: 0.9rem;
+}
 .settings-panel h2,
 .parser-assignment h2 {
     margin: 0;

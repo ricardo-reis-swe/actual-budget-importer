@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface ParserSetting {
+  countryCode: string;
+  countryName: string;
   enabled: boolean;
   id: string;
   name: string;
@@ -15,12 +17,40 @@ interface CorrespondentMapping {
 interface ParserSettingsResponse {
   correspondents: CorrespondentMapping[];
   parsers: ParserSetting[];
+  setupComplete: boolean;
 }
 
-export function ParserSettingsPage() {
+interface CountryGroup {
+  code: string;
+  name: string;
+  parsers: ParserSetting[];
+}
+
+function CountryToggle({ checked, indeterminate, label, onChange }: {
+  checked: boolean;
+  indeterminate: boolean;
+  label: string;
+  onChange(checked: boolean): void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (input.current) input.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return <label className="country-toggle">
+    <input ref={input} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    <span>{label}</span>
+  </label>;
+}
+
+export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
+  initialSetup?: boolean;
+  onSetupComplete?(): void;
+}) {
   const [settings, setSettings] = useState<ParserSettingsResponse>();
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const load = () => {
     void fetch('/api/parser-settings')
@@ -34,22 +64,50 @@ export function ParserSettingsPage() {
 
   useEffect(load, []);
 
-  const setEnabled = async (parser: ParserSetting, enabled: boolean) => {
-    setError(undefined);
-    const response = await fetch(`/api/parser-settings/parsers/${encodeURIComponent(parser.id)}`, {
-      body: JSON.stringify({ enabled }),
-      headers: { 'content-type': 'application/json' },
-      method: 'PATCH',
-    });
-    if (!response.ok) {
-      setError((await response.json() as { message?: string }).message ?? 'The parser setting could not be saved.');
-      return;
+  const countries = useMemo(() => {
+    const grouped = new Map<string, CountryGroup>();
+    for (const parser of settings?.parsers ?? []) {
+      const group = grouped.get(parser.countryCode) ?? { code: parser.countryCode, name: parser.countryName, parsers: [] };
+      group.parsers.push(parser);
+      grouped.set(parser.countryCode, group);
     }
+    return [...grouped.values()]
+      .map((country) => ({ ...country, parsers: country.parsers.sort((left, right) => left.name.localeCompare(right.name)) }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [settings]);
+
+  const setEnabled = (parserIds: readonly string[], enabled: boolean) => {
+    const changed = new Set(parserIds);
     setSettings((current) => current && ({
       ...current,
-      parsers: current.parsers.map((item) => item.id === parser.id ? { ...item, enabled } : item),
+      parsers: current.parsers.map((parser) => changed.has(parser.id) ? { ...parser, enabled } : parser),
     }));
-    setFeedback(`${parser.name} is now ${enabled ? 'shown in' : 'hidden from'} parser dropdowns.`);
+    setFeedback('');
+  };
+
+  const saveSelection = async () => {
+    if (!settings) return;
+    setSaving(true);
+    setError(undefined);
+    const enabledParserIds = settings.parsers.filter((parser) => parser.enabled).map((parser) => parser.id);
+    try {
+      const response = await fetch('/api/parser-settings/selection', {
+        body: JSON.stringify({ enabledParserIds }),
+        headers: { 'content-type': 'application/json' },
+        method: 'PUT',
+      });
+      if (!response.ok) {
+        setError((await response.json() as { message?: string }).message ?? 'The parser selection could not be saved.');
+        return;
+      }
+      setSettings((current) => current && ({ ...current, setupComplete: true }));
+      setFeedback('Parser selection saved.');
+      if (initialSetup) onSetupComplete?.();
+    } catch {
+      setError('The parser selection could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const setMapping = async (correspondentId: number, parserId: string) => {
@@ -74,18 +132,44 @@ export function ParserSettingsPage() {
   if (!settings) return <main><p>Loading parser settings…</p></main>;
 
   return <main>
-    <header className="page-heading"><p className="eyebrow">Configuration</p><h1>Parser settings</h1><p>Choose which parsers appear in selection lists and match Paperless-ngx correspondents automatically.</p></header>
+    <header className="page-heading">
+      <p className="eyebrow">{initialSetup ? 'Welcome' : 'Configuration'}</p>
+      <h1>{initialSetup ? 'Choose your bank parsers' : 'Parser settings'}</h1>
+      <p>{initialSetup
+        ? 'Select the countries and individual bank parsers you want to see. You can change this later in Parser settings.'
+        : 'Choose which parsers appear in selection lists and match Paperless-ngx correspondents automatically.'}</p>
+    </header>
     {error && <p role="alert">{error}</p>}
     {feedback && <p className="rules-feedback" role="status">{feedback}</p>}
     <section className="settings-panel" aria-labelledby="available-parsers-heading">
-      <h2 id="available-parsers-heading">Parser dropdowns</h2>
-      <p>Hidden parsers remain installed and keep working for existing statements and correspondent rules.</p>
-      <ul className="settings-list">{settings.parsers.map((parser) => <li key={parser.id}>
-        <span><strong>{parser.name}</strong><small>{parser.id}</small></span>
-        <label className="toggle-label"><input type="checkbox" checked={parser.enabled} onChange={(event) => void setEnabled(parser, event.target.checked)} /> Show in dropdowns</label>
-      </li>)}</ul>
+      <h2 id="available-parsers-heading">Available parsers</h2>
+      <p>Select a country to change its full group, then adjust individual banks if needed. Hidden parsers still work for existing statements and correspondent rules.</p>
+      <div className="parser-country-list">{countries.map((country) => {
+        const enabledCount = country.parsers.filter((parser) => parser.enabled).length;
+        return <section className="parser-country" key={country.code}>
+          <div className="parser-country-heading">
+            <CountryToggle
+              checked={enabledCount === country.parsers.length}
+              indeterminate={enabledCount > 0 && enabledCount < country.parsers.length}
+              label={country.name}
+              onChange={(enabled) => setEnabled(country.parsers.map((parser) => parser.id), enabled)}
+            />
+            <small>{enabledCount} of {country.parsers.length} selected</small>
+          </div>
+          <ul className="parser-country-parsers">{country.parsers.map((parser) => <li key={parser.id}>
+            <label className="parser-option">
+              <input type="checkbox" checked={parser.enabled} onChange={(event) => setEnabled([parser.id], event.target.checked)} />
+              <span>{parser.name}</span>
+            </label>
+          </li>)}</ul>
+        </section>;
+      })}</div>
+      <div className="settings-actions">
+        <span>{settings.parsers.filter((parser) => parser.enabled).length} of {settings.parsers.length} parsers selected</span>
+        <button type="button" disabled={saving} onClick={() => void saveSelection()}>{saving ? 'Saving…' : initialSetup ? 'Save and continue' : 'Save parser selection'}</button>
+      </div>
     </section>
-    <section className="settings-panel" aria-labelledby="correspondent-rules-heading">
+    {!initialSetup && <section className="settings-panel" aria-labelledby="correspondent-rules-heading">
       <h2 id="correspondent-rules-heading">Paperless correspondent matching</h2>
       <p>When a new document arrives, its correspondent selects the assigned parser automatically. Correspondents appear here after the app has seen them.</p>
       {settings.correspondents.length === 0 ? <p>No Paperless correspondents have been seen yet.</p> : <ul className="settings-list">{settings.correspondents.map((correspondent) => <li key={correspondent.correspondentId}>
@@ -95,6 +179,6 @@ export function ParserSettingsPage() {
           {settings.parsers.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}{parser.enabled ? '' : ' (hidden)'}</option>)}
         </select></label>
       </li>)}</ul>}
-    </section>
+    </section>}
   </main>;
 }

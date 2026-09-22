@@ -10,22 +10,28 @@ import type { HeaderModal } from './app-header.js';
 import { ParserSettingsPage } from './parser-settings-page.js';
 import './styles.css';
 
-function HeaderModalDialog({ modal, onClose, onRulesChanged }: { modal: HeaderModal; onClose: () => void; onRulesChanged: () => void }) {
+function HeaderModalDialog({ modal, onClose, onRulesChanged, parserSetupRequired, onParserSetupComplete }: {
+  modal: HeaderModal;
+  onClose: () => void;
+  onRulesChanged: () => void;
+  parserSetupRequired: boolean;
+  onParserSetupComplete(): void;
+}) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !parserSetupRequired) onClose();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
+  }, [onClose, parserSetupRequired]);
 
   const content = modal === 'parserSettings'
-    ? <ParserSettingsPage />
+    ? <ParserSettingsPage initialSetup={parserSetupRequired} onSetupComplete={onParserSetupComplete} />
     : modal === 'rules' ? <CategorizationRulesPage onRulesChanged={onRulesChanged} /> : <CategoriesPage />;
 
-  return <div className="header-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <div className="header-modal-backdrop" onMouseDown={(event) => { if (!parserSetupRequired && event.target === event.currentTarget) onClose(); }}>
     <section className="header-modal" role="dialog" aria-modal="true" aria-label={modal === 'parserSettings' ? 'Parser settings' : modal === 'rules' ? 'Transaction rules' : 'Categories'}>
-      <button autoFocus type="button" className="header-modal-close secondary-button" onClick={onClose} aria-label="Close dialog">×</button>
+      {!parserSetupRequired && <button autoFocus type="button" className="header-modal-close secondary-button" onClick={onClose} aria-label="Close dialog">×</button>}
       {content}
     </section>
   </div>;
@@ -33,6 +39,7 @@ function HeaderModalDialog({ modal, onClose, onRulesChanged }: { modal: HeaderMo
 
 function App() {
   const [modal, setModal] = useState<HeaderModal>();
+  const [parserSetupRequired, setParserSetupRequired] = useState(false);
   const [rulesRevision, setRulesRevision] = useState(0);
   const statementId = new URLSearchParams(window.location.search).get('statementId');
 
@@ -40,7 +47,19 @@ function App() {
     if (!statementId) void fetch('/api/categories/refresh', { method: 'POST' }).catch(() => undefined);
   }, [statementId]);
 
-  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage rulesRevision={rulesRevision} /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} onRulesChanged={() => setRulesRevision((current) => current + 1)} />}</>;
+  useEffect(() => {
+    void fetch('/api/parser-settings')
+      .then((response) => response.ok ? response.json() as Promise<{ setupComplete: boolean }> : undefined)
+      .then((settings) => {
+        if (settings && !settings.setupComplete) {
+          setParserSetupRequired(true);
+          setModal('parserSettings');
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage rulesRevision={rulesRevision} /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} onRulesChanged={() => setRulesRevision((current) => current + 1)} parserSetupRequired={parserSetupRequired && modal === 'parserSettings'} onParserSetupComplete={() => { setParserSetupRequired(false); setModal(undefined); }} />}</>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

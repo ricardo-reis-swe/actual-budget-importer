@@ -130,6 +130,15 @@ people can use it.
 - Provide parser settings in the application header. Let users
   choose which installed parsers appear in parser dropdowns and
   configure automatic Paperless correspondent-to-parser rules.
+- On the first application visit, open parser settings automatically
+  and ask the user to save their parser selection before continuing.
+- Group installed parsers by country in parser settings. Let users
+  select or clear every parser for a country and override that choice
+  for each individual parser.
+- Use country selection only as a bulk editing convenience. Persist
+  the resulting visibility choice for each individual parser.
+- Keep the grouped country and individual parser controls available
+  from parser settings after initial setup is complete.
 - Hiding a parser affects selection lists only. Keep it usable by
   existing statements and saved correspondent rules.
 

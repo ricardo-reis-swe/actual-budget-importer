@@ -87,7 +87,7 @@ describe('categorization rules', () => {
     await rules.create({ categoryId: 'coffee', descriptionContains: 'coffee', excluded: true });
     const processor = new DirectUploadProcessor(
       database.db,
-      [{ id: 'synthetic', name: 'Synthetic', parse: async () => [{ position: 0, date: '01-01-2026', description: 'Coffee shop', amountCents: -450 }] }],
+      [{ countryCode: 'PT', countryName: 'Portugal', id: 'synthetic', name: 'Synthetic', parse: async () => [{ position: 0, date: '01-01-2026', description: 'Coffee shop', amountCents: -450 }] }],
       undefined,
       undefined,
       rules,

@@ -25,6 +25,8 @@ async function setup() {
   const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-e2e-')));
   await database.migrate();
   const parser: BankParser = {
+    countryCode: 'PT',
+    countryName: 'Portugal',
     id: 'synthetic',
     name: 'Synthetic parser',
     parse: vi.fn().mockResolvedValue([{ position: 0, date: '02-01-2026', description: 'Synthetic coffee', amountCents: -345 }]),
