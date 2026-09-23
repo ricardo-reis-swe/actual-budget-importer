@@ -107,9 +107,9 @@ people can use it.
 - Repeated clicks or retries must not create duplicate
   transactions in Actual Budget.
 
-## Initial statement support
+## Statement support
 
-- Initially support ActivoBank and WiZink PDF statements.
+- Support ActivoBank, WiZink, and POSB eSavings PDF statements.
 - Use the owner's existing extraction script and bank presets
   as the starting point for statement parsing.
 - Changes to extraction behavior require the owner's approval.

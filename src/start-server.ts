@@ -17,6 +17,7 @@ import { StatementLifecycle } from './processing/statement-lifecycle.js';
 import { activoBankParser } from './parsers/activobank-parser.js';
 import { wizinkParser } from './parsers/wizink-parser.js';
 import { ParserSettings } from './parsers/parser-settings.js';
+import { posbEsavingsParser } from './parsers/posb-esavings-parser.js';
 
 if (existsSync('.env')) {
   process.loadEnvFile('.env');
@@ -25,7 +26,7 @@ if (existsSync('.env')) {
 const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
 await database.migrate(configuration.actualBudget.legacyAccountId);
-const parsers = [activoBankParser, wizinkParser] as const;
+const parsers = [activoBankParser, wizinkParser, posbEsavingsParser] as const;
 const paperlessClient = configuration.paperless ? new PaperlessClient(configuration.paperless) : undefined;
 const parserSettings = new ParserSettings(database.db, parsers, paperlessClient);
 const categorizationRules = new CategorizationRules(database.db);
