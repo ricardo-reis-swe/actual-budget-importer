@@ -66,7 +66,7 @@ function StatementList({ statements, canDelete = true, showAttentionIcon = false
   </ul>;
 }
 
-function UploadForm() {
+function UploadForm({ dataRevision }: { dataRevision: number }) {
   const [parsers, setParsers] = useState<ParserSelectOption[]>();
   const [file, setFile] = useState<File>();
   const [parserId, setParserId] = useState('');
@@ -79,9 +79,12 @@ function UploadForm() {
         if (!response.ok) throw new Error(messages.upload.error);
         return response.json() as Promise<{ parsers: ParserSelectOption[] }>;
       })
-      .then((loaded) => setParsers(loaded.parsers))
+      .then((loaded) => {
+        setParsers(loaded.parsers);
+        setParserId((current) => loaded.parsers.some((parser) => parser.id === current) ? current : '');
+      })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : messages.upload.error));
-  }, []);
+  }, [dataRevision]);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,7 +127,7 @@ function UploadForm() {
   </section>;
 }
 
-export function StatementDashboard() {
+export function StatementDashboard({ dataRevision = 0 }: { dataRevision?: number }) {
   const [statements, setStatements] = useState<StatementSummary[]>();
   const [error, setError] = useState<string>();
 
@@ -138,7 +141,7 @@ export function StatementDashboard() {
       .catch(() => setError(messages.dashboard.loadError));
   };
 
-  useEffect(loadStatements, []);
+  useEffect(() => { loadStatements(); }, [dataRevision]);
   const grouped = useMemo(() => {
     const nonPublished = statements?.filter((statement) => statement.status !== 'published') ?? [];
     return {
@@ -152,7 +155,7 @@ export function StatementDashboard() {
   if (!statements) return <main><p>{messages.dashboard.loading}</p></main>;
 
   return <main>
-    <UploadForm />
+    <UploadForm dataRevision={dataRevision} />
     <section className="dashboard-stats" aria-label="Statement summary">
       <div className="stat-card"><strong>{grouped.attention.length}</strong><span>{messages.dashboard.needsAttention}</span></div>
       <div className="stat-card"><strong>{grouped.review.length}</strong><span>{messages.dashboard.review}</span></div>

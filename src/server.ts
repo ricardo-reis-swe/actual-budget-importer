@@ -101,6 +101,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     app.get('/api/parsers', async () => ({ parsers: await options.parserSettings!.listParsers() }));
     app.get('/api/parser-settings', async () => ({
       correspondents: await options.parserSettings!.listCorrespondents(),
+      paperlessConfigured: options.paperlessControls !== undefined,
       parsers: await options.parserSettings!.listParsers(true),
       setupComplete: await options.parserSettings!.isSetupComplete(),
     }));

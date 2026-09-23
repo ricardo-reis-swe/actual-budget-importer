@@ -10,10 +10,10 @@ import type { HeaderModal } from './app-header.js';
 import { ParserSettingsPage } from './parser-settings-page.js';
 import './styles.css';
 
-function HeaderModalDialog({ modal, onClose, onRulesChanged, parserSetupRequired, onParserSetupComplete }: {
+function HeaderModalDialog({ modal, onClose, onDataChanged, parserSetupRequired, onParserSetupComplete }: {
   modal: HeaderModal;
   onClose: () => void;
-  onRulesChanged: () => void;
+  onDataChanged: () => void;
   parserSetupRequired: boolean;
   onParserSetupComplete(): void;
 }) {
@@ -26,8 +26,8 @@ function HeaderModalDialog({ modal, onClose, onRulesChanged, parserSetupRequired
   }, [onClose, parserSetupRequired]);
 
   const content = modal === 'parserSettings'
-    ? <ParserSettingsPage initialSetup={parserSetupRequired} onSetupComplete={onParserSetupComplete} />
-    : modal === 'rules' ? <CategorizationRulesPage onRulesChanged={onRulesChanged} /> : <CategoriesPage />;
+    ? <ParserSettingsPage initialSetup={parserSetupRequired} onDataChanged={onDataChanged} onSetupComplete={onParserSetupComplete} />
+    : modal === 'rules' ? <CategorizationRulesPage onRulesChanged={onDataChanged} /> : <CategoriesPage onDataChanged={onDataChanged} />;
 
   return <div className="header-modal-backdrop" onMouseDown={(event) => { if (!parserSetupRequired && event.target === event.currentTarget) onClose(); }}>
     <section className="header-modal" role="dialog" aria-modal="true" aria-label={modal === 'parserSettings' ? 'Parser settings' : modal === 'rules' ? 'Transaction rules' : 'Categories'}>
@@ -40,7 +40,7 @@ function HeaderModalDialog({ modal, onClose, onRulesChanged, parserSetupRequired
 function App() {
   const [modal, setModal] = useState<HeaderModal>();
   const [parserSetupRequired, setParserSetupRequired] = useState(false);
-  const [rulesRevision, setRulesRevision] = useState(0);
+  const [dataRevision, setDataRevision] = useState(0);
   const statementId = new URLSearchParams(window.location.search).get('statementId');
 
   useEffect(() => {
@@ -59,7 +59,7 @@ function App() {
       .catch(() => undefined);
   }, []);
 
-  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage rulesRevision={rulesRevision} /> : <StatementDashboard />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} onRulesChanged={() => setRulesRevision((current) => current + 1)} parserSetupRequired={parserSetupRequired && modal === 'parserSettings'} onParserSetupComplete={() => { setParserSetupRequired(false); setModal(undefined); }} />}</>;
+  return <><AppHeader onOpenModal={setModal} />{statementId ? <StatementReviewPage dataRevision={dataRevision} /> : <StatementDashboard dataRevision={dataRevision} />}{modal && <HeaderModalDialog modal={modal} onClose={() => setModal(undefined)} onDataChanged={() => setDataRevision((current) => current + 1)} parserSetupRequired={parserSetupRequired && modal === 'parserSettings'} onParserSetupComplete={() => { setParserSetupRequired(false); setModal(undefined); }} />}</>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

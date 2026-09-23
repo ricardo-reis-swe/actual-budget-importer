@@ -188,6 +188,12 @@
   enabled parser IDs and marks initial parser setup complete.
 - Expose installed parser visibility and known Paperless
   correspondent mappings through parser-settings API endpoints.
+- Include whether Paperless-ngx is configured in the parser-settings
+  response so the interface can distinguish an unavailable integration
+  from a configured integration with no known correspondents.
+- Notify the active dashboard or statement review page after successful
+  parser-setting, category, or rule mutations and reload its server-backed
+  data without closing the settings dialog.
 - Build parser selectors on the shared grouped-select component used by
   categories. Group and label options by country only when the selector
   contains parsers from more than one country.

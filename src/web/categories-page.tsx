@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 interface Category { id: string; name: string; deleted: boolean; hidden: boolean }
 interface Group { id: string; name: string; deleted: boolean; categories: Category[] }
 
-export function CategoriesPage() {
+export function CategoriesPage({ onDataChanged }: { onDataChanged?: () => void } = {}) {
   const [groups, setGroups] = useState<Group[]>();
   const [groupName, setGroupName] = useState('');
   const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
@@ -42,6 +42,7 @@ export function CategoriesPage() {
         const created = await response.json() as { id: string; name: string };
         setGroups((current) => [...(current ?? []), { ...created, deleted: false, categories: [] }]);
         setGroupName('');
+        onDataChanged?.();
       }
     } catch {
       setError('Category group could not be created.');
@@ -70,6 +71,7 @@ export function CategoriesPage() {
           ? { ...group, categories: [...group.categories, { id: created.id, name: created.name, deleted: false, hidden: false }] }
           : group));
         setCategoryNames((current) => ({ ...current, [groupId]: '' }));
+        onDataChanged?.();
       }
     } catch {
       setError('Category could not be created.');
@@ -101,6 +103,7 @@ export function CategoriesPage() {
         })));
         setEditingCategoryId(undefined);
         setEditingCategoryName('');
+        onDataChanged?.();
       }
     } catch {
       setError('Category could not be renamed.');
@@ -130,6 +133,7 @@ export function CategoriesPage() {
           setEditingCategoryId(undefined);
           setEditingCategoryName('');
         }
+        onDataChanged?.();
       }
     } catch {
       setError('Category could not be removed.');

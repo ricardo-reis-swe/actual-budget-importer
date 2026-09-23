@@ -106,7 +106,7 @@ function matchingRuleLabel(rule: MatchingRule, groups: CategoryGroup[]): string 
   return `Covered by rule: description contains “${rule.descriptionContains}” → ${effects.join(', ')}`;
 }
 
-export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: number }) {
+export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: number }) {
   const [statement, setStatement] = useState<StatementDetail>();
   const [drafts, setDrafts] = useState<Record<number, ReviewDraft>>({});
   const [selectedTransactionId, setSelectedTransactionId] = useState<number>();
@@ -163,7 +163,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
         setDrafts(Object.fromEntries(loaded.transactions.map((transaction) => [transaction.id, toDraft(transaction)])));
       })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The statement could not be loaded.'));
-  }, [rulesRevision]);
+  }, [dataRevision]);
 
   const published = statement?.status === 'published';
   const readOnly = statement?.status === 'publishing' || statement?.status === 'republishing';

@@ -314,6 +314,8 @@ people can use it.
   and let the user map ActivoBank and WiZink to the appropriate
   correspondents.
 - Save correspondent mappings locally.
+- When Paperless-ngx is not configured, show that automatic
+  correspondent matching is unavailable in parser settings.
 - Do not provide other integration settings in the app
   interface.
 
@@ -491,6 +493,9 @@ people can use it.
   in the confirmation.
 - Disable editing and repeated Publish actions while publishing
   is in progress.
+- After parser settings, categories, or categorization rules are
+  changed, refresh the page beneath the settings dialog so it
+  immediately reflects the saved data.
 - On a published statement, label the action **Publish changes** and keep its
   previously selected destination account locked.
 

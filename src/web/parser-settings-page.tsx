@@ -18,6 +18,7 @@ interface CorrespondentMapping {
 
 interface ParserSettingsResponse {
   correspondents: CorrespondentMapping[];
+  paperlessConfigured: boolean;
   parsers: ParserSetting[];
   setupComplete: boolean;
 }
@@ -45,8 +46,9 @@ function CountryToggle({ checked, indeterminate, label, onChange }: {
   </label>;
 }
 
-export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
+export function ParserSettingsPage({ initialSetup = false, onDataChanged, onSetupComplete }: {
   initialSetup?: boolean;
+  onDataChanged?(): void;
   onSetupComplete?(): void;
 }) {
   const [settings, setSettings] = useState<ParserSettingsResponse>();
@@ -104,6 +106,7 @@ export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
       }
       setSettings((current) => current && ({ ...current, setupComplete: true }));
       setFeedback('Parser selection saved.');
+      onDataChanged?.();
       if (initialSetup) onSetupComplete?.();
     } catch {
       setError('The parser selection could not be saved.');
@@ -128,6 +131,7 @@ export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
       correspondents: current.correspondents.map((item) => item.correspondentId === correspondentId ? { ...item, parserId: parserId || null } : item),
     }));
     setFeedback(parserId ? 'Correspondent matching rule saved.' : 'Correspondent matching rule removed.');
+    onDataChanged?.();
   };
 
   if (error && !settings) return <main><p role="alert">{error}</p></main>;
@@ -173,11 +177,13 @@ export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
     </section>
     {!initialSetup && <section className="settings-panel" aria-labelledby="correspondent-rules-heading">
       <h2 id="correspondent-rules-heading">Paperless correspondent matching</h2>
-      <p>When a new document arrives, its correspondent selects the assigned parser automatically. Correspondents appear here after the app has seen them.</p>
-      {settings.correspondents.length === 0 ? <p>No Paperless correspondents have been seen yet.</p> : <ul className="settings-list">{settings.correspondents.map((correspondent) => <li key={correspondent.correspondentId}>
-        <span><strong>{correspondent.correspondentName ?? 'Correspondent name unavailable'}</strong></span>
-        <label>Parser<GroupedParserSelect ariaLabel={`Parser for ${correspondent.correspondentName ?? `correspondent ${correspondent.correspondentId}`}`} emptyLabel="Ask each time" parsers={settings.parsers} value={correspondent.parserId ?? ''} onChange={(value) => void setMapping(correspondent.correspondentId, value)} /></label>
-      </li>)}</ul>}
+      {!settings.paperlessConfigured
+        ? <p>Paperless-ngx is not configured, so automatic correspondent matching is unavailable.</p>
+        : <><p>When a new document arrives, its correspondent selects the assigned parser automatically. Correspondents appear here after the app has seen them.</p>
+          {settings.correspondents.length === 0 ? <p>No Paperless correspondents have been seen yet.</p> : <ul className="settings-list">{settings.correspondents.map((correspondent) => <li key={correspondent.correspondentId}>
+            <span><strong>{correspondent.correspondentName ?? 'Correspondent name unavailable'}</strong></span>
+            <label>Parser<GroupedParserSelect ariaLabel={`Parser for ${correspondent.correspondentName ?? `correspondent ${correspondent.correspondentId}`}`} emptyLabel="Ask each time" parsers={settings.parsers} value={correspondent.parserId ?? ''} onChange={(value) => void setMapping(correspondent.correspondentId, value)} /></label>
+          </li>)}</ul>}</>}
     </section>}
   </main>;
 }

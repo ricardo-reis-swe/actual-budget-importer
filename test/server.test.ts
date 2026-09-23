@@ -66,6 +66,7 @@ describe('server baseline', () => {
     const initial = await app.inject({ method: 'GET', url: '/api/parser-settings' });
     expect(initial.statusCode).toBe(200);
     expect(initial.json()).toMatchObject({
+      paperlessConfigured: false,
       setupComplete: false,
       parsers: [
         { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'activobank', name: 'ActivoBank' },
@@ -86,6 +87,28 @@ describe('server baseline', () => {
     ]);
     const completed = await app.inject({ method: 'GET', url: '/api/parser-settings' });
     expect(completed.json().setupComplete).toBe(true);
+
+    await app.close();
+    await database.close();
+  });
+
+  it('reports when Paperless correspondent matching is available', async () => {
+    const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
+    await database.migrate();
+    const app = buildServer({
+      database,
+      parserSettings: new ParserSettings(database.db, []),
+      paperlessControls: {
+        mappings: vi.fn().mockResolvedValue([]),
+        retry: vi.fn(),
+        selectParser: vi.fn(),
+        setMapping: vi.fn(),
+        synchronize: vi.fn(),
+      },
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/parser-settings' });
+    expect(response.json().paperlessConfigured).toBe(true);
 
     await app.close();
     await database.close();
