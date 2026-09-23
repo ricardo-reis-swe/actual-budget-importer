@@ -139,6 +139,10 @@ people can use it.
   the resulting visibility choice for each individual parser.
 - Keep the grouped country and individual parser controls available
   from parser settings after initial setup is complete.
+- Use the same grouped dropdown pattern as category selection for parser
+  selectors. Show country headings and country/parser paths when more than
+  one country is available, and omit the redundant country label when all
+  available parsers belong to one country.
 - Hiding a parser affects selection lists only. Keep it usable by
   existing statements and saved correspondent rules.
 

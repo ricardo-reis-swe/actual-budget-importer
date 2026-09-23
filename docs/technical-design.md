@@ -188,6 +188,9 @@
   enabled parser IDs and marks initial parser setup complete.
 - Expose installed parser visibility and known Paperless
   correspondent mappings through parser-settings API endpoints.
+- Build parser selectors on the shared grouped-select component used by
+  categories. Group and label options by country only when the selector
+  contains parsers from more than one country.
 
 ## Technology choices
 

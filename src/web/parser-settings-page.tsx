@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { GroupedParserSelect } from './grouped-parser-select.js';
+
 interface ParserSetting {
   countryCode: string;
   countryName: string;
@@ -174,10 +176,7 @@ export function ParserSettingsPage({ initialSetup = false, onSetupComplete }: {
       <p>When a new document arrives, its correspondent selects the assigned parser automatically. Correspondents appear here after the app has seen them.</p>
       {settings.correspondents.length === 0 ? <p>No Paperless correspondents have been seen yet.</p> : <ul className="settings-list">{settings.correspondents.map((correspondent) => <li key={correspondent.correspondentId}>
         <span><strong>{correspondent.correspondentName ?? 'Correspondent name unavailable'}</strong></span>
-        <label>Parser<select value={correspondent.parserId ?? ''} onChange={(event) => void setMapping(correspondent.correspondentId, event.target.value)}>
-          <option value="">Ask each time</option>
-          {settings.parsers.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}{parser.enabled ? '' : ' (hidden)'}</option>)}
-        </select></label>
+        <label>Parser<GroupedParserSelect ariaLabel={`Parser for ${correspondent.correspondentName ?? `correspondent ${correspondent.correspondentId}`}`} emptyLabel="Ask each time" parsers={settings.parsers} value={correspondent.parserId ?? ''} onChange={(value) => void setMapping(correspondent.correspondentId, value)} /></label>
       </li>)}</ul>}
     </section>}
   </main>;

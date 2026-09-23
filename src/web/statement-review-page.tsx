@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { GroupedCategorySelect } from './grouped-category-select.js';
+import { GroupedParserSelect, type ParserSelectOption } from './grouped-parser-select.js';
 
 interface StatementTransaction {
   actualCategoryId: string | null;
@@ -35,7 +36,6 @@ interface StatementDetail {
   paperless: { correspondentName: string | null; documentDate: string | null; documentId: number | null };
 }
 
-interface ParserOption { id: string; name: string }
 interface ActualAccount { closed: boolean; id: string; name: string; offBudget: boolean }
 
 interface ReviewDraft {
@@ -127,7 +127,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [isApplyingRules, setIsApplyingRules] = useState(false);
   const [rulesFeedback, setRulesFeedback] = useState('');
-  const [parsers, setParsers] = useState<ParserOption[]>([]);
+  const [parsers, setParsers] = useState<ParserSelectOption[]>([]);
   const [selectedParserId, setSelectedParserId] = useState('');
   const [parserFile, setParserFile] = useState<File>();
   const [isChangingParser, setIsChangingParser] = useState(false);
@@ -149,8 +149,8 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
       })
       .then((loaded) => setCategoryGroups(loaded.groups))
       .catch(() => undefined);
-    void fetch('/api/parsers')
-      .then(async (response) => response.ok ? response.json() as Promise<{ parsers: ParserOption[] }> : { parsers: [] })
+    void fetch('/api/parser-settings')
+      .then(async (response) => response.ok ? response.json() as Promise<{ parsers: ParserSelectOption[] }> : { parsers: [] })
       .then((loaded) => setParsers(loaded.parsers));
     void fetch(`/api/statements/${encodeURIComponent(statementId)}`)
       .then(async (response) => {
@@ -173,6 +173,16 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
   if (!statement) return <main><p>Loading statement…</p></main>;
 
   const includedTransactions = statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded);
+  const selectableParsers = parsers.filter((parser) => parser.enabled !== false || parser.id === statement.parserId);
+  if (statement.parserId && !selectableParsers.some((parser) => parser.id === statement.parserId)) {
+    selectableParsers.push({
+      countryCode: 'ZZ',
+      countryName: 'Unavailable',
+      enabled: false,
+      id: statement.parserId,
+      name: statement.parserId,
+    });
+  }
   const visibleTransactions = showOnlyUncategorized
     ? statement.transactions.filter((transaction) => !drafts[transaction.id]?.actualCategoryId)
     : statement.transactions;
@@ -383,11 +393,7 @@ export function StatementReviewPage({ rulesRevision = 0 }: { rulesRevision?: num
     {statement.actualAccount && <p role="status">Destination account: <strong>{statement.actualAccount.name ?? statement.actualAccount.id}</strong></p>}
     {!readOnly && !published && <section className="parser-assignment" aria-labelledby="statement-parser-heading">
       <div><h2 id="statement-parser-heading">Statement parser</h2><p>{statement.parserId ? 'Choose another parser to re-extract this statement.' : 'Choose a parser to extract this Paperless-ngx statement.'}</p></div>
-      <label>Parser<select value={selectedParserId} onChange={(event) => { setSelectedParserId(event.target.value); setParserError(undefined); }}>
-        <option value="">Select a parser</option>
-        {statement.parserId && !parsers.some((parser) => parser.id === statement.parserId) && <option value={statement.parserId}>{statement.parserId} (hidden)</option>}
-        {parsers.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}</option>)}
-      </select></label>
+      <label>Parser<GroupedParserSelect ariaLabel="Statement parser" emptyLabel="Select a parser" parsers={selectableParsers} value={selectedParserId} onChange={(value) => { setSelectedParserId(value); setParserError(undefined); }} /></label>
       {statement.paperless.documentId === null && selectedParserId !== statement.parserId && <label>Original PDF<input type="file" accept="application/pdf,.pdf" onChange={(event) => setParserFile(event.target.files?.[0])} /></label>}
       <button type="button" disabled={!selectedParserId || selectedParserId === statement.parserId || isChangingParser} onClick={() => void changeParser()}>{isChangingParser ? 'Changing parser…' : statement.parserId ? 'Change parser' : 'Use parser'}</button>
       {parserError && <p role="alert">{parserError}</p>}

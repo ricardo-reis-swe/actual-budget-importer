@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 
+import { GroupedParserSelect, type ParserSelectOption } from './grouped-parser-select.js';
 import { messages } from './messages.js';
 
 interface StatementSummary {
@@ -13,11 +14,6 @@ interface StatementSummary {
   paperlessDocumentTitle: string | null;
   status: string;
   transactionCount: number;
-}
-
-interface ParserOption {
-  id: string;
-  name: string;
 }
 
 const attentionStatuses = new Set(['awaiting parser selection', 'extraction failed', 'publish failed']);
@@ -71,7 +67,7 @@ function StatementList({ statements, canDelete = true, showAttentionIcon = false
 }
 
 function UploadForm() {
-  const [parsers, setParsers] = useState<ParserOption[]>();
+  const [parsers, setParsers] = useState<ParserSelectOption[]>();
   const [file, setFile] = useState<File>();
   const [parserId, setParserId] = useState('');
   const [error, setError] = useState<string>();
@@ -81,7 +77,7 @@ function UploadForm() {
     void fetch('/api/parsers')
       .then(async (response) => {
         if (!response.ok) throw new Error(messages.upload.error);
-        return response.json() as Promise<{ parsers: ParserOption[] }>;
+        return response.json() as Promise<{ parsers: ParserSelectOption[] }>;
       })
       .then((loaded) => setParsers(loaded.parsers))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : messages.upload.error));
@@ -121,10 +117,7 @@ function UploadForm() {
         setFile(event.target.files?.[0]);
         setError(undefined);
       }} disabled={isUploading} /></label>
-      <label>{messages.upload.chooseParser} <select value={parserId} onChange={(event) => { setParserId(event.target.value); setError(undefined); }} disabled={!parsers || isUploading} required>
-        <option value="">{messages.upload.chooseParser}</option>
-        {parsers?.map((parser) => <option key={parser.id} value={parser.id}>{parser.name}</option>)}
-      </select></label>
+      <label>{messages.upload.chooseParser} <GroupedParserSelect ariaLabel={messages.upload.chooseParser} disabled={!parsers || isUploading} emptyLabel={messages.upload.chooseParser} parsers={parsers ?? []} value={parserId} onChange={(value) => { setParserId(value); setError(undefined); }} /></label>
       {error && <p role="alert">{error}</p>}
       <button type="submit" disabled={!parsers || isUploading}>{isUploading ? 'Uploading…' : messages.upload.submit}</button>
     </form>
