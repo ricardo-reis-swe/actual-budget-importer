@@ -15,7 +15,7 @@ describe('parser settings', () => {
     const settings = new ParserSettings(database.db, [
       { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'activobank', name: 'ActivoBank' },
       { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'wizink', name: 'WiZink' },
-      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-esavings', name: 'POSB/DBS eSavings' },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS' },
     ]);
 
     expect(await settings.listParsers()).toHaveLength(2);
@@ -25,10 +25,10 @@ describe('parser settings', () => {
     expect(await settings.listParsers(true)).toEqual([
       { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank', enabled: true },
       { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink', enabled: false },
-      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-esavings', name: 'POSB/DBS eSavings', enabled: false },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS', enabled: false },
     ]);
-    await settings.setParserEnabled('posb-esavings', true);
-    expect((await settings.listParsers()).map((parser) => parser.id)).toEqual(['activobank', 'posb-esavings']);
+    await settings.setParserEnabled('posb-dbs', true);
+    expect((await settings.listParsers()).map((parser) => parser.id)).toEqual(['activobank', 'posb-dbs']);
     await database.close();
   });
 

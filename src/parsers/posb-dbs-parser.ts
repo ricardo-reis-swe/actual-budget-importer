@@ -28,11 +28,11 @@ interface PendingTransaction {
   readonly description: string[];
 }
 
-export const posbEsavingsParser: BankParser = {
+export const posbDbsParser: BankParser = {
   countryCode: 'SG',
   countryName: 'Singapore',
-  id: 'posb-esavings',
-  name: 'POSB/DBS eSavings',
+  id: 'posb-dbs',
+  name: 'POSB/DBS',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {
     const document = await getDocument({ data: new Uint8Array(pdf) }).promise;
     try {

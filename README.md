@@ -4,7 +4,7 @@
 
 # Actual Budget Importer
 
-Actual Budget Importer turns ActivoBank, WiZink, and POSB eSavings PDF statements into
+Actual Budget Importer turns ActivoBank, WiZink, and POSB/DBS PDF statements into
 reviewable transactions before you publish them to Actual Budget. Statements
 can be uploaded directly or received from Paperless-ngx. Categories are loaded
 from Actual Budget, and new category groups and categories can be created from

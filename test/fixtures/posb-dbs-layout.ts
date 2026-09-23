@@ -1,4 +1,4 @@
-import type { PosbTextChunk } from '../../src/parsers/posb-esavings-parser.js';
+import type { PosbTextChunk } from '../../src/parsers/posb-dbs-parser.js';
 
 function chunk(text: string, x: number, y: number): PosbTextChunk {
   return { text, x, y };
@@ -27,7 +27,7 @@ export const posbRegressionPages = [
     chunk('3,341.17', 486, 421),
   ],
   [
-    chunk('Details of Your POSB eSavings Account', 37, 680),
+    chunk('Details of Your POSB Account', 37, 680),
     chunk('DATE', 37, 661),
     chunk('DETAILS OF TRANSACTIONS', 97, 661),
     chunk('31 Jan', 37, 614),

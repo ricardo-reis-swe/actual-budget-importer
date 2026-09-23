@@ -59,7 +59,7 @@ describe('server baseline', () => {
     const parsers = [
       { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'activobank', name: 'ActivoBank' },
       { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'wizink', name: 'WiZink' },
-      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-esavings', name: 'POSB/DBS eSavings' },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS' },
     ];
     const app = buildServer({ database, parserSettings: new ParserSettings(database.db, parsers) });
 
@@ -70,7 +70,7 @@ describe('server baseline', () => {
       parsers: [
         { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'activobank', name: 'ActivoBank' },
         { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'wizink', name: 'WiZink' },
-        { countryCode: 'SG', countryName: 'Singapore', enabled: false, id: 'posb-esavings', name: 'POSB/DBS eSavings' },
+        { countryCode: 'SG', countryName: 'Singapore', enabled: false, id: 'posb-dbs', name: 'POSB/DBS' },
       ],
     });
 

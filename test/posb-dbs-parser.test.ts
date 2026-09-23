@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { parsePosbText, posbEsavingsParser } from '../src/parsers/posb-esavings-parser.js';
-import { posbAmbiguousPages, posbRegressionPages } from './fixtures/posb-esavings-layout.js';
+import { parsePosbText, posbDbsParser } from '../src/parsers/posb-dbs-parser.js';
+import { posbAmbiguousPages, posbRegressionPages } from './fixtures/posb-dbs-layout.js';
 
-describe('POSB eSavings parser', () => {
+describe('POSB/DBS parser', () => {
   it('is registered as a hidden-by-default Singapore parser', () => {
-    expect(posbEsavingsParser).toMatchObject({
+    expect(posbDbsParser).toMatchObject({
       countryCode: 'SG',
       countryName: 'Singapore',
-      id: 'posb-esavings',
-      name: 'POSB/DBS eSavings',
+      id: 'posb-dbs',
+      name: 'POSB/DBS',
     });
-    expect(posbEsavingsParser.enabledByDefault).toBeUndefined();
+    expect(posbDbsParser.enabledByDefault).toBeUndefined();
   });
 
   it('parses multipage withdrawals, deposits, and multiline descriptions', () => {
