@@ -57,14 +57,22 @@ describe('server baseline', () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
     const parsers = [
-      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
-      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'wizink', name: 'WiZink' },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS' },
     ];
     const app = buildServer({ database, parserSettings: new ParserSettings(database.db, parsers) });
 
     const initial = await app.inject({ method: 'GET', url: '/api/parser-settings' });
     expect(initial.statusCode).toBe(200);
-    expect(initial.json()).toMatchObject({ setupComplete: false, parsers });
+    expect(initial.json()).toMatchObject({
+      setupComplete: false,
+      parsers: [
+        { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'activobank', name: 'ActivoBank' },
+        { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'wizink', name: 'WiZink' },
+        { countryCode: 'SG', countryName: 'Singapore', enabled: false, id: 'posb-dbs', name: 'POSB/DBS' },
+      ],
+    });
 
     const saved = await app.inject({
       method: 'PUT',
@@ -73,7 +81,9 @@ describe('server baseline', () => {
     });
     expect(saved.statusCode).toBe(204);
     const visible = await app.inject({ method: 'GET', url: '/api/parsers' });
-    expect(visible.json().parsers).toEqual([{ ...parsers[0], enabled: true }]);
+    expect(visible.json().parsers).toEqual([
+      { countryCode: 'PT', countryName: 'Portugal', enabled: true, id: 'activobank', name: 'ActivoBank' },
+    ]);
     const completed = await app.inject({ method: 'GET', url: '/api/parser-settings' });
     expect(completed.json().setupComplete).toBe(true);
 

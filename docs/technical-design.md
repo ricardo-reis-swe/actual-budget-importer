@@ -180,13 +180,17 @@
   Paperless-ngx, or Actual Budget directly.
 - Adding a bank should require a new parser without changing the
   general statement workflow.
-- Persist per-parser dropdown visibility in SQLite, defaulting new
-  parsers to visible.
+- Persist per-parser dropdown visibility in SQLite. Keep the original
+  ActivoBank and WiZink parsers visible when no preference has been saved,
+  and default newly added parsers to hidden until the user selects them.
 - Persist parser-setup completion in application settings.
 - Provide an atomic parser-selection API operation that saves the
   enabled parser IDs and marks initial parser setup complete.
 - Expose installed parser visibility and known Paperless
   correspondent mappings through parser-settings API endpoints.
+- Build parser selectors on the shared grouped-select component used by
+  categories. Group and label options by country only when the selector
+  contains parsers from more than one country.
 
 ## Technology choices
 

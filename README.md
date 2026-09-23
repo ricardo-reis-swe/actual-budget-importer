@@ -4,7 +4,7 @@
 
 # Actual Budget Importer
 
-Actual Budget Importer turns ActivoBank and WiZink PDF statements into
+Actual Budget Importer turns ActivoBank, WiZink, and POSB/DBS PDF statements into
 reviewable transactions before you publish them to Actual Budget. Statements
 can be uploaded directly or received from Paperless-ngx. Categories are loaded
 from Actual Budget, and new category groups and categories can be created from
@@ -142,16 +142,18 @@ To add a parser:
 
 1. Add a parser module under `src/parsers` that implements `BankParser`.
 2. Register it in the `parsers` array in `src/start-server.ts`.
-3. Add regression tests and synthetic statement-layout f
+   Newly added parsers are hidden until the user enables them in Parser settings.
+3. Add regression tests and synthetic statement-layout fixtures under `test/`.
+   Do not commit real statements or other financial data.
+4. Run `pnpm run typecheck` and `pnpm test` before opening a pull request.
+
 ### Data storage
 
 Actual Budget Importer stores its application data in SQLite. In the example
 Compose configuration, `./data` is mounted at `/data` in the container so the
 database survives container replacements. Back up this directory regularly,
 and do not run more than one importer instance against the same data
-directory.ixtures under `test/`.
-   Do not commit real statements or other financial data.
-4. Run `pnpm run typecheck` and `pnpm test` before opening a pull request.
+directory.
 
 ## License
 

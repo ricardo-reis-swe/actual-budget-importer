@@ -107,9 +107,9 @@ people can use it.
 - Repeated clicks or retries must not create duplicate
   transactions in Actual Budget.
 
-## Initial statement support
+## Statement support
 
-- Initially support ActivoBank and WiZink PDF statements.
+- Support ActivoBank, WiZink, and POSB/DBS PDF statements.
 - Use the owner's existing extraction script and bank presets
   as the starting point for statement parsing.
 - Changes to extraction behavior require the owner's approval.
@@ -139,6 +139,10 @@ people can use it.
   the resulting visibility choice for each individual parser.
 - Keep the grouped country and individual parser controls available
   from parser settings after initial setup is complete.
+- Use the same grouped dropdown pattern as category selection for parser
+  selectors. Show country headings and country/parser paths when more than
+  one country is available, and omit the redundant country label when all
+  available parsers belong to one country.
 - Hiding a parser affects selection lists only. Keep it usable by
   existing statements and saved correspondent rules.
 

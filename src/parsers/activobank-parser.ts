@@ -20,6 +20,7 @@ const transactionDate = /^(\d{1,2})[./-](\d{2})[./-](\d{2,4})$/;
 export const activoBankParser: BankParser = {
   countryCode: 'PT',
   countryName: 'Portugal',
+  enabledByDefault: true,
   id: 'activobank',
   name: 'ActivoBank',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {

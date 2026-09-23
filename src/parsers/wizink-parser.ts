@@ -13,6 +13,7 @@ const nonTransactionRow = /^(?:data|date|descri[cç][aã]o|montante|movimentos?|
 export const wizinkParser: BankParser = {
   countryCode: 'PT',
   countryName: 'Portugal',
+  enabledByDefault: true,
   id: 'wizink',
   name: 'WiZink',
   async parse(pdf: Uint8Array): Promise<readonly ParsedTransaction[]> {

@@ -24,11 +24,11 @@ export class ParserSettingsError extends Error {
 }
 
 export class ParserSettings {
-  private readonly parsers: ReadonlyMap<string, Pick<BankParser, 'countryCode' | 'countryName' | 'id' | 'name'>>;
+  private readonly parsers: ReadonlyMap<string, Pick<BankParser, 'countryCode' | 'countryName' | 'enabledByDefault' | 'id' | 'name'>>;
 
   constructor(
     private readonly database: Kysely<DatabaseSchema>,
-    parsers: readonly Pick<BankParser, 'countryCode' | 'countryName' | 'id' | 'name'>[],
+    parsers: readonly Pick<BankParser, 'countryCode' | 'countryName' | 'enabledByDefault' | 'id' | 'name'>[],
     private readonly paperless?: { getCorrespondentName(correspondentId: number): Promise<string> },
   ) {
     this.parsers = new Map(parsers.map((parser) => [parser.id, parser]));
@@ -41,7 +41,13 @@ export class ParserSettings {
       .execute();
     const enabledById = new Map(saved.map((setting) => [setting.parser_id, setting.enabled === 1]));
     return [...this.parsers.values()]
-      .map((parser) => ({ ...parser, enabled: enabledById.get(parser.id) ?? true }))
+      .map((parser) => ({
+        countryCode: parser.countryCode,
+        countryName: parser.countryName,
+        enabled: enabledById.get(parser.id) ?? parser.enabledByDefault === true,
+        id: parser.id,
+        name: parser.name,
+      }))
       .filter((parser) => includeDisabled || parser.enabled);
   }
 

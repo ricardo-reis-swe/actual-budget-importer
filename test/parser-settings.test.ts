@@ -9,12 +9,13 @@ import { StatementManagement } from '../src/statements/statement-management.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
 describe('parser settings', () => {
-  it('defaults parsers to visible and persists dropdown visibility', async () => {
+  it('keeps legacy defaults visible, hides new parsers, and persists visibility', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
     const settings = new ParserSettings(database.db, [
-      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
-      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'wizink', name: 'WiZink' },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS' },
     ]);
 
     expect(await settings.listParsers()).toHaveLength(2);
@@ -24,7 +25,10 @@ describe('parser settings', () => {
     expect(await settings.listParsers(true)).toEqual([
       { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank', enabled: true },
       { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink', enabled: false },
+      { countryCode: 'SG', countryName: 'Singapore', id: 'posb-dbs', name: 'POSB/DBS', enabled: false },
     ]);
+    await settings.setParserEnabled('posb-dbs', true);
+    expect((await settings.listParsers()).map((parser) => parser.id)).toEqual(['activobank', 'posb-dbs']);
     await database.close();
   });
 
@@ -32,8 +36,8 @@ describe('parser settings', () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
     const settings = new ParserSettings(database.db, [
-      { countryCode: 'PT', countryName: 'Portugal', id: 'activobank', name: 'ActivoBank' },
-      { countryCode: 'PT', countryName: 'Portugal', id: 'wizink', name: 'WiZink' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'activobank', name: 'ActivoBank' },
+      { countryCode: 'PT', countryName: 'Portugal', enabledByDefault: true, id: 'wizink', name: 'WiZink' },
     ]);
 
     expect(await settings.isSetupComplete()).toBe(false);
