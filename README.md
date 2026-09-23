@@ -57,6 +57,20 @@ services:
       # The container runs as a non-root user; ensure ./data is writable by it.
 ```
 
+### Development container image
+
+Every update to the `main` branch publishes an unreleased container image
+tagged `develop`:
+
+```yaml
+image: ghcr.io/ricardo-reis-swe/actual-budget-importer:develop
+```
+
+This image contains the latest changes but may be unstable. Use it for testing
+rather than production, and back up the mounted data directory before
+upgrading. The `latest` tag remains the recommended choice for stable
+installations.
+
 Paperless-ngx is optional. To enable it, set both `PAPERLESS_URL` and
 `PAPERLESS_API_TOKEN`. PDF processing defaults to a 100 MiB limit and a
 five-minute timeout; both can be changed in the Compose file.
