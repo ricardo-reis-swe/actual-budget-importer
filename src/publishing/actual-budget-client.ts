@@ -120,6 +120,7 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       const dataDirectory = join(this.configuration.dataDirectory, 'actual-cache');
       await mkdir(dataDirectory, { recursive: true });
       await actual.init({
+        verbose: false,
         dataDir: dataDirectory,
         password: this.configuration.actualBudget.password,
         serverURL: this.configuration.actualBudget.serverUrl.toString(),

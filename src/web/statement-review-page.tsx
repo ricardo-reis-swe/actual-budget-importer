@@ -84,7 +84,7 @@ function reviewUpdate(transaction: StatementTransaction, draft: ReviewDraft): Re
 }
 
 function formatCents(cents: number): string {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' }).format(cents / 100);
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
 }
 
 function totalCents(statement: StatementDetail, drafts: Record<number, ReviewDraft>): number {

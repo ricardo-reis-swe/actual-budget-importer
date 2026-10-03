@@ -10,6 +10,13 @@ can be uploaded directly or received from Paperless-ngx. Categories are loaded
 from Actual Budget, and new category groups and categories can be created from
 the importer.
 
+For ActivoBank credit-card statements, enable **ActivoBank CC** in parser
+settings, then select it in the upload form or configure its Paperless-ngx
+correspondent mapping.
+It extracts the **DETALHE DOS MOVIMENTOS** table using the movement date,
+with debits as negative amounts and credits as positive amounts. Use
+**ActivoBank** for account statements.
+
 > [!IMPORTANT]
 > This app is designed for one user on a trusted internal network. Do not
 > expose it directly to the public internet
