@@ -79,7 +79,7 @@
 ## Mapping transactions to Actual Budget
 
 - Send the reviewed transaction description as the Actual
-  Budget payee name.
+  Budget payee name for ordinary transactions.
 - Preserve the original extracted description as the imported
   payee text.
 - Send the reviewed date, signed amount, and optional category.
@@ -306,3 +306,24 @@
   interrupted publishing.
 - Never require real credentials or personal financial data
   to run the test suite.
+
+## Transfer publishing
+
+- Persist a nullable `transfer_account_id` on each statement transaction.
+  Include `transferAccountId` in review responses and review PATCH requests.
+- Resolve transfer targets through Actual Budget's existing payees whose
+  `transfer_acct` matches the selected account ID. Send that payee ID during
+  import instead of a payee name, preserving the extracted imported payee.
+- Validate transfer targets before importing. Clear the effective category
+  for transfers whose accounts have the same budget status. For transfers crossing
+  the budget boundary, apply the reviewed category to the on-budget side only.
+- Use the existing stable import identifiers and Actual's import reconciliation
+  for opposite-side statements and retries. Store the reconciled transaction ID.
+- Apply reviewed updates through Actual's transfer-aware update API. Verify the
+  source payee, amount, category, and reciprocal transfer IDs and opposite amount
+  before recording successful publication. Explicitly update the counterpart
+  date because Actual's update API does not propagate transfer date changes.
+- Wait for reviewed values and transfer mutations to become observable before
+  shutting down the API session; Actual's update API may return before its
+  internal transfer work has finished. Use a bounded verification wait and
+  preserve a retryable failure if verification times out.

@@ -88,6 +88,28 @@ people can use it.
   Keep this indicator independent from later manual category and inclusion
   changes.
 
+## Transfers between Actual Budget accounts
+
+- Let users mark a reviewed transaction as a transfer to/from another active
+  Actual Budget account, or change it back to an ordinary transaction.
+- Show a transfer icon button beside a description when it is hovered,
+  focused, or selected. Open account choices as buttons in a dialog,
+  and show the assigned account below the description.
+- Fit statement review to the available width without horizontal scrolling;
+  stack transaction fields on narrow screens.
+- Preserve the extracted description and signed amount. Negative amounts
+  leave the statement account; positive amounts enter it.
+- Reject transfers to the statement's publication account. Show the selected
+  transfer accounts in publication confirmation.
+- Create a linked transfer in Actual Budget and reconcile the opposite side
+  when its statement is imported, without creating another transfer pair.
+- Transfers between two on-budget accounts or two off-budget accounts have
+  no category. Transfers crossing the budget boundary may have a category.
+- Allow transfer selections to be edited after publication using Publish
+  changes, updating the existing linked transactions.
+- Keep transfer assignments local and available during integration outages.
+  Saved categorization rules continue to assign categories and inclusion only.
+
 ## Publishing to Actual Budget
 
 - Publish sends the selected statement's reviewed transactions

@@ -34,6 +34,7 @@ export interface StatementDetail extends Omit<StatementSummary,
 
 export interface StatementTransaction {
   actualCategoryId: string | null;
+  transferAccountId: string | null;
   amountCents: number;
   date: string;
   description: string;
@@ -48,6 +49,7 @@ export interface StatementTransaction {
 
 export interface ReviewUpdate {
   actualCategoryId?: string | null;
+  transferAccountId?: string | null;
   excluded?: boolean;
   reviewedAmountCents?: number;
   reviewedDate?: string;
@@ -170,6 +172,7 @@ export class StatementManagement {
       status: statement.status,
       transactions: transactions.map((transaction, index) => ({
         actualCategoryId: transaction.actual_category_id,
+        transferAccountId: transaction.transfer_account_id,
         amountCents: transaction.amount_cents,
         date: transaction.date,
         description: transaction.description,
@@ -202,6 +205,7 @@ export class StatementManagement {
     }
 
     const values: Record<string, string | number | null> = {};
+    if (update.transferAccountId !== undefined) values.transfer_account_id = update.transferAccountId;
     if (update.actualCategoryId !== undefined) values.actual_category_id = update.actualCategoryId;
     if (update.excluded !== undefined) values.excluded = update.excluded ? 1 : 0;
     if (update.reviewedAmountCents !== undefined) values.reviewed_amount_cents = update.reviewedAmountCents;
@@ -229,6 +233,7 @@ export class StatementManagement {
 
     return {
       actualCategoryId: updated.actual_category_id,
+      transferAccountId: updated.transfer_account_id,
       amountCents: updated.amount_cents,
       date: updated.date,
       description: updated.description,

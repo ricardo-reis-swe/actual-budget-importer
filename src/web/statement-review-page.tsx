@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { messages } from './messages.js';
+
 import { GroupedCategorySelect } from './grouped-category-select.js';
 import { GroupedParserSelect, type ParserSelectOption } from './grouped-parser-select.js';
 
 interface StatementTransaction {
   actualCategoryId: string | null;
+  transferAccountId: string | null;
   amountCents: number;
   date: string;
   description: string;
@@ -40,6 +43,7 @@ interface ActualAccount { closed: boolean; id: string; name: string; offBudget: 
 
 interface ReviewDraft {
   actualCategoryId: string;
+  transferAccountId: string;
   amountCents: string;
   date: string;
   description: string;
@@ -64,6 +68,7 @@ interface CategoryGroup {
 function toDraft(transaction: StatementTransaction): ReviewDraft {
   return {
     actualCategoryId: transaction.actualCategoryId ?? '',
+    transferAccountId: transaction.transferAccountId ?? '',
     amountCents: String(transaction.reviewedAmountCents ?? transaction.amountCents),
     date: transaction.reviewedDate ?? transaction.date,
     description: transaction.reviewedDescription ?? transaction.description,
@@ -75,6 +80,7 @@ function reviewUpdate(transaction: StatementTransaction, draft: ReviewDraft): Re
   const current = toDraft(transaction);
   const amountCents = Number(draft.amountCents);
   return {
+    ...(draft.transferAccountId !== current.transferAccountId ? { transferAccountId: draft.transferAccountId || null } : {}),
     ...(draft.actualCategoryId !== current.actualCategoryId ? { actualCategoryId: draft.actualCategoryId || null } : {}),
     ...(draft.amountCents !== current.amountCents ? { reviewedAmountCents: amountCents } : {}),
     ...(draft.date !== current.date ? { reviewedDate: draft.date } : {}),
@@ -110,6 +116,8 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
   const [statement, setStatement] = useState<StatementDetail>();
   const [drafts, setDrafts] = useState<Record<number, ReviewDraft>>({});
   const [selectedTransactionId, setSelectedTransactionId] = useState<number>();
+  const [selectedDescriptionId, setSelectedDescriptionId] = useState<number>();
+  const [transferTransactionId, setTransferTransactionId] = useState<number>();
   const [editingField, setEditingField] = useState<keyof ReviewDraft>();
   const [ruleTransactionId, setRuleTransactionId] = useState<number>();
   const [ruleDescription, setRuleDescription] = useState('');
@@ -149,6 +157,10 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
       })
       .then((loaded) => setCategoryGroups(loaded.groups))
       .catch(() => undefined);
+    void fetch('/api/actual/accounts')
+      .then(async (response) => response.ok ? response.json() as Promise<{ accounts: ActualAccount[] }> : { accounts: [] })
+      .then((loaded) => setAccounts(loaded.accounts))
+      .catch(() => undefined);
     void fetch('/api/parser-settings')
       .then(async (response) => response.ok ? response.json() as Promise<{ parsers: ParserSelectOption[] }> : { parsers: [] })
       .then((loaded) => setParsers(loaded.parsers));
@@ -166,7 +178,7 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
   }, [dataRevision]);
 
   const published = statement?.status === 'published';
-  const readOnly = statement?.status === 'publishing' || statement?.status === 'republishing';
+  const readOnly = isPublishing || statement?.status === 'publishing' || statement?.status === 'republishing';
   const canPublish = statement?.status === 'ready for review' || statement?.status === 'publish failed' || published;
 
   if (error) return <main><p role="alert">{error}</p></main>;
@@ -184,7 +196,7 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
     });
   }
   const visibleTransactions = showOnlyUncategorized
-    ? statement.transactions.filter((transaction) => !drafts[transaction.id]?.actualCategoryId)
+    ? statement.transactions.filter((transaction) => !drafts[transaction.id]?.actualCategoryId && !drafts[transaction.id]?.transferAccountId)
     : statement.transactions;
   const inflowCents = includedTransactions.reduce((total, transaction) => {
     const amount = Number(drafts[transaction.id]?.amountCents ?? transaction.amountCents);
@@ -214,6 +226,7 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
   const editCell = (transaction: StatementTransaction, field: keyof ReviewDraft) => {
     if (readOnly) return;
     setSelectedTransactionId(transaction.id);
+    setSelectedDescriptionId(field === 'description' ? transaction.id : undefined);
     setEditingField(field);
   };
 
@@ -318,6 +331,13 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
     const destination = statement.actualAccount
       ?? (selectedAccount ? { id: selectedAccount.id, name: selectedAccount.name } : null);
     if (!destination) return;
+    if (includedTransactions.some((transaction) => {
+      const targetId = drafts[transaction.id]?.transferAccountId;
+      return targetId && (targetId === selectedAccountId || !accounts.some((account) => account.id === targetId && !account.closed));
+    })) {
+      setPublishError(messages.transfer.invalid);
+      return;
+    }
     setIsPublishing(true);
     setPublishError(undefined);
     try {
@@ -401,26 +421,44 @@ export function StatementReviewPage({ dataRevision = 0 }: { dataRevision?: numbe
     <section className="review-summary" aria-label="Review summary"><div><strong>{statement.transactions.length}</strong><span>Transactions</span></div><div><strong>{statement.transactions.filter((transaction) => !drafts[transaction.id]?.excluded).length}</strong><span>Included</span></div><div><strong>{formatCents(totalCents(statement, drafts))}</strong><span>Included total</span></div></section>
     <div className="review-actions"><label className="transaction-filter"><input type="checkbox" checked={showOnlyUncategorized} onChange={(event) => setShowOnlyUncategorized(event.target.checked)} />Show only uncategorized</label><div className="review-action-buttons">{!readOnly && !published && <button className="secondary-button" type="button" onClick={() => void applyRules()} disabled={isApplyingRules}>{isApplyingRules ? 'Applying rules…' : 'Apply rules'}</button>}{canPublish && <button type="button" onClick={() => void openPublishDialog()} disabled={isPublishing || pendingSaveCount > 0}>{isPublishing ? 'Publishing…' : pendingSaveCount > 0 ? 'Saving changes…' : published ? 'Publish changes' : 'Publish statement'}</button>}</div></div>
     {rulesFeedback && <p className="rules-feedback" role="status">{rulesFeedback}</p>}
+    <p>{messages.transfer.help}</p>
     <div className="transaction-table-wrap"><table className="transaction-table">
       <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Included</th><th /></tr></thead>
       <tbody>{visibleTransactions.map((transaction) => {
         const draft = drafts[transaction.id]!;
+        const sourceAccount = accounts.find((account) => account.id === statement.actualAccount?.id);
+        const targetAccount = accounts.find((account) => account.id === draft.transferAccountId);
+        const categoryDisabled = Boolean(sourceAccount && targetAccount && sourceAccount.offBudget === targetAccount.offBudget);
         const isEditing = selectedTransactionId === transaction.id;
         const cell = (field: keyof ReviewDraft, value: ReactNode) => editingField === field && selectedTransactionId === transaction.id && !readOnly
           ? <input className="inline-editor" autoFocus value={draft[field] as string} onChange={(event) => updateDraft(transaction, field, event.target.value)} onBlur={() => { saveInline(transaction); setEditingField(undefined); }} /> : <button className="inline-cell" type="button" onClick={() => editCell(transaction, field)}>{value}</button>;
         return <tr className={isEditing ? 'transaction-row-selected' : undefined} key={transaction.id}>
-          <td>{cell('date', draft.date)}</td><td>{cell('description', draft.description)}</td><td>{cell('amountCents', formatCents(Number(draft.amountCents)))}</td>
-          <td className="category-cell"><GroupedCategorySelect ariaLabel={`Category for ${draft.description}`} disabled={readOnly} emptyLabel="Uncategorized" fillRemainingViewport groups={categoryGroups} value={draft.actualCategoryId} onChange={(categoryId) => selectCategory(transaction, categoryId)} /></td><td>{draft.excluded ? 'No' : 'Yes'}</td>
-          <td className="row-actions">{!readOnly && !published && <><button type="button" title={draft.excluded ? 'Include transaction' : 'Exclude transaction'} onClick={() => {
+          <td data-label="Date">{cell('date', draft.date)}</td><td data-label="Description"><div className={`description-cell${selectedDescriptionId === transaction.id ? ' description-cell-selected' : ''}`}>
+            {cell('description', draft.description)}
+            {!readOnly && <button className="description-transfer-button" type="button" title={messages.transfer.label} aria-label={`${messages.transfer.label} for ${draft.description}`} disabled={pendingSaveCount > 0} onMouseDown={(event) => event.preventDefault()} onClick={() => { saveInline(transaction); setEditingField(undefined); setSelectedDescriptionId(transaction.id); setTransferTransactionId(transaction.id); }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4" /></svg></button>}
+          </div>{draft.transferAccountId && <span className="transaction-transfer-label">⇄ {targetAccount?.name ?? messages.transfer.unavailable}</span>}</td><td data-label="Amount">{cell('amountCents', formatCents(Number(draft.amountCents)))}</td>
+          <td className="category-cell" data-label="Category"><GroupedCategorySelect ariaLabel={`Category for ${draft.description}`} disabled={readOnly || categoryDisabled} emptyLabel={categoryDisabled ? messages.transfer.category : "Uncategorized"} fillRemainingViewport groups={categoryGroups} value={categoryDisabled ? '' : draft.actualCategoryId} onChange={(categoryId) => selectCategory(transaction, categoryId)} /></td><td data-label="Included">{draft.excluded ? 'No' : 'Yes'}</td>
+          <td className="row-actions" data-label="Actions"><div className="inline-row-actions">{!readOnly && !published && <><button type="button" title={draft.excluded ? 'Include transaction' : 'Exclude transaction'} onClick={() => {
             const updatedDraft = { ...draft, excluded: !draft.excluded };
             setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
             saveInline(transaction, updatedDraft);
-          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button className="rule-row-button" type="button" title={transaction.matchingRule ? matchingRuleLabel(transaction.matchingRule, categoryGroups) : 'Add transaction rule'} aria-label={transaction.matchingRule ? `Add transaction rule; ${matchingRuleLabel(transaction.matchingRule, categoryGroups)}` : 'Add transaction rule'} onClick={() => openRuleDialog(transaction)}><span aria-hidden="true">＋</span>{transaction.matchingRule && <span className="rule-match-badge" aria-hidden="true">✓</span>}</button></>}</td>
+          }} aria-label={draft.excluded ? 'Include transaction' : 'Exclude transaction'}>{draft.excluded ? '✓' : '⊘'}</button><button className="rule-row-button" type="button" title={transaction.matchingRule ? matchingRuleLabel(transaction.matchingRule, categoryGroups) : 'Add transaction rule'} aria-label={transaction.matchingRule ? `Add transaction rule; ${matchingRuleLabel(transaction.matchingRule, categoryGroups)}` : 'Add transaction rule'} onClick={() => openRuleDialog(transaction)}><span aria-hidden="true">＋</span>{transaction.matchingRule && <span className="rule-match-badge" aria-hidden="true">✓</span>}</button></>}</div></td>
         </tr>;
       })}{showOnlyUncategorized && visibleTransactions.length === 0 && <tr><td className="transaction-table-empty" colSpan={6}>No uncategorized transactions.</td></tr>}</tbody>
     </table></div>
+    {transferTransactionId && !readOnly && <div className="dialog-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setTransferTransactionId(undefined); }}><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="transfer-dialog-title" onKeyDown={(event) => { if (event.key === 'Escape') setTransferTransactionId(undefined); }}><h2 id="transfer-dialog-title">{messages.transfer.label}</h2><p>{drafts[transferTransactionId]?.description}</p><div className="transfer-account-options">{[{ id: '', name: messages.transfer.ordinary }, ...accounts.filter((account) => !account.closed && account.id !== statement.actualAccount?.id)].map((account) => <button autoFocus={account.id === (drafts[transferTransactionId]?.transferAccountId ?? '')} type="button" className="secondary-button" disabled={pendingSaveCount > 0} aria-pressed={account.id === drafts[transferTransactionId]?.transferAccountId} key={account.id} onClick={() => {
+        const transaction = statement.transactions.find((item) => item.id === transferTransactionId);
+        const draft = drafts[transferTransactionId];
+        if (!transaction || !draft) return;
+        const updatedDraft = { ...draft, transferAccountId: account.id };
+        setDrafts((current) => ({ ...current, [transaction.id]: updatedDraft }));
+        saveInline(transaction, updatedDraft);
+        setTransferTransactionId(undefined);
+      }}>{account.name}</button>)}</div>{accounts.length === 0 && <p role="status">{messages.transfer.unavailable}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setTransferTransactionId(undefined)}>{messages.transfer.close}</button></div></section></div>}
     {publishDialogOpen && <div className="dialog-backdrop" role="presentation"><section className="rule-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-dialog-title"><h2 id="publish-dialog-title">{published ? 'Publish changes' : 'Publish statement'}</h2><p>{published ? 'Confirm the updated transactions. Changes will be applied to the existing transactions in Actual Budget.' : 'Confirm the transactions and destination account before publishing.'}</p><form onSubmit={(event) => { event.preventDefault(); void publish(); }}>
+      {published && <p>{messages.transfer.editHelp}</p>}
       <dl className="publish-summary"><div><dt>Included</dt><dd>{includedTransactions.length}</dd></div><div><dt>Excluded</dt><dd>{statement.transactions.length - includedTransactions.length}</dd></div><div><dt>Inflows</dt><dd>{formatCents(inflowCents)}</dd></div><div><dt>Outflows</dt><dd>{formatCents(outflowCents)}</dd></div></dl>
+      {includedTransactions.some((transaction) => drafts[transaction.id]?.transferAccountId) && <ul>{includedTransactions.filter((transaction) => drafts[transaction.id]?.transferAccountId).map((transaction) => <li key={transaction.id}>{drafts[transaction.id]!.description}: {formatCents(Number(drafts[transaction.id]!.amountCents))} · {messages.transfer.label}: {accounts.find((account) => account.id === drafts[transaction.id]!.transferAccountId)?.name ?? messages.transfer.unavailable}</li>)}</ul>}
       <label htmlFor="publish-account">Destination account<select id="publish-account" disabled={isLoadingAccounts || statement.actualAccount !== null} value={selectedAccountId} onChange={(event) => { setSelectedAccountId(event.target.value); setPublishError(undefined); }}><option value="">Select an account</option>{statement.actualAccount && !accounts.some((account) => account.id === statement.actualAccount!.id) && <option value={statement.actualAccount.id}>{statement.actualAccount.name ?? statement.actualAccount.id}</option>}{accounts.filter((account) => !account.closed).map((account) => <option key={account.id} value={account.id}>{account.name}{account.offBudget ? ' (off budget)' : ''}</option>)}</select></label>
       {statement.actualAccount && <p>This account is locked because a publication attempt has already started.</p>}
       {isLoadingAccounts && <p role="status">Loading accounts…</p>}

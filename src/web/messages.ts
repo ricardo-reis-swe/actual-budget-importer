@@ -1,4 +1,14 @@
 export const messages = {
+  transfer: {
+    label: 'Transfer to/from account',
+    ordinary: 'Not a transfer',
+    unavailable: 'Transfer account unavailable',
+    help: 'Select the other Actual Budget account for transfers. The amount determines the direction. Transfers between accounts with the same budget status have no category.',
+    invalid: 'Choose a different active transfer account for each included transfer.',
+    category: 'Transfer',
+    close: 'Close',
+    editHelp: 'Changing a transfer account moves its linked entry. Selecting Not a transfer removes the linked entry from the other account.',
+  },
   upload: {
     chooseFile: 'Choose a PDF statement',
     chooseParser: 'Select a bank parser',

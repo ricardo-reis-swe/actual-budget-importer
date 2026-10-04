@@ -680,7 +680,6 @@ form button {
     text-align: right;
 }
 .transaction-table-wrap {
-    overflow-x: auto;
     border: 1px solid #e2e8f0;
     border-radius: 0.9rem;
     background: #fff;
@@ -689,7 +688,7 @@ form button {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    min-width: 700px;
+    min-width: 0;
 }
 .transaction-table th {
     background: #f8fafc;
@@ -713,16 +712,90 @@ form button {
     color: #64748b;
     text-align: center;
 }
+.transaction-table th { overflow-wrap: anywhere; }
+.transaction-table td:first-child .inline-cell { white-space: normal; }
 .transaction-table td:nth-child(3) {
     font-variant-numeric: tabular-nums;
     text-align: right;
 }
-.transaction-table th:nth-child(1) { width: 12%; }
-.transaction-table th:nth-child(2) { width: 32%; }
-.transaction-table th:nth-child(3) { width: 14%; }
-.transaction-table th:nth-child(4) { width: 23%; }
-.transaction-table th:nth-child(5) { width: 10%; }
-.transaction-table th:nth-child(6) { width: 9%; }
+.transaction-table th:nth-child(1) { width: 15%; }
+.transaction-table th:nth-child(2) { width: 30%; }
+.transaction-table th:nth-child(3) { width: 12%; }
+.transaction-table th:nth-child(4) { width: 25%; }
+.transaction-table th:nth-child(5) { width: 8%; }
+.transaction-table th:nth-child(6) { width: 10%; }
+.description-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+.description-cell > .inline-cell,
+.description-cell > .inline-editor {
+    flex: 1;
+    min-width: 0;
+}
+.description-cell > .inline-cell {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.description-transfer-button {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem 0.55rem;
+    visibility: hidden;
+}
+.description-cell:hover .description-transfer-button,
+.description-cell:focus-within .description-transfer-button,
+.description-cell-selected .description-transfer-button {
+    visibility: visible;
+}
+.transaction-transfer-label {
+    display: block;
+    color: #64748b;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    padding-left: 0.45rem;
+}
+.transfer-account-options {
+    display: grid;
+    gap: 0.5rem;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.transfer-account-options button {
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+.transfer-account-options button[aria-pressed="true"] {
+    border-color: #4967d8;
+    background: #eef2ff;
+}
+@media (hover: none) {
+    .description-transfer-button { visibility: visible; }
+}
+@media (max-width: 640px) {
+    .transaction-table thead { display: none; }
+    .transaction-table,
+    .transaction-table tbody,
+    .transaction-table tr { display: block; }
+    .transaction-table tr { padding: 0.6rem; border-bottom: 1px solid #e2e8f0; }
+    .transaction-table td {
+        display: grid;
+        grid-template-columns: 5rem minmax(0, 1fr);
+        align-items: center;
+        gap: 0.5rem;
+        border: 0;
+        padding: 0.25rem 0;
+        text-align: left !important;
+    }
+    .transaction-table td::before { content: attr(data-label); color: #64748b; font-size: 0.75rem; }
+    .transaction-table .transaction-table-empty { display: block; }
+    .transaction-table .transaction-table-empty::before { content: none; }
+    .transaction-transfer-label { grid-column: 2; }
+}
 .transaction-row-selected td {
     background: #fafbff;
 }
@@ -862,10 +935,15 @@ form button {
     padding: 0.35rem 1.8rem 0.35rem 0;
 }
 .row-actions {
-    white-space: nowrap;
+    white-space: normal;
+}
+.inline-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
 }
 .row-actions button {
-    margin-left: 0.3rem;
+    margin: 0;
     padding: 0.35rem 0.55rem;
 }
 .rule-row-button {

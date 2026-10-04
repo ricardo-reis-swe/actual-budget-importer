@@ -162,6 +162,25 @@ database survives container replacements. Back up this directory regularly,
 and do not run more than one importer instance against the same data
 directory.
 
+## Transfers between accounts
+
+In statement review, hover over or select a description and click the transfer
+icon beside it. Choose the other Actual Budget account in the dialog. A negative
+amount leaves the statement account; a positive amount enters it. Select **Not a transfer** for ordinary transactions.
+Choose the statement's own account when confirming publication.
+
+Actual creates the linked transaction in the other account. When reviewing
+that account's PDF, mark the corresponding row as a transfer back to the first
+account so Actual can reconcile it with the existing entry. Reconciliation
+uses Actual's matching behavior (equal amounts and dates within seven days);
+review any unmatched transfers in Actual.
+
+Transfers between accounts with the same budget status have no category.
+For a transfer between an on-budget and an off-budget account, the selected
+category applies to the on-budget side. Transfer changes can be sent with
+**Publish changes**; changing back to an ordinary transaction removes the
+linked entry in Actual.
+
 ## License
 
 Licensed under the [GNU General Public License, version 3 or later](LICENSE).

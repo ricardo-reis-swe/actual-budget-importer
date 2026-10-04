@@ -247,9 +247,15 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         if (!publication) {
           return reply.code(400).send({ message: 'Select an Actual Budget account and confirm publication.' });
         }
-        const account = (await options.accountSource.getAccounts()).find((item) => item.id === publication.accountId);
+        const accounts = await options.accountSource.getAccounts();
+        const account = accounts.find((item) => item.id === publication.accountId);
         if (!account || account.closed) {
           return reply.code(400).send({ message: 'Select an active Actual Budget account.' });
+        }
+        const statement = await options.statements?.get(parseId(request.params.statementId));
+        if (statement?.transactions.some((transaction) => !transaction.excluded && transaction.transferAccountId
+          && (transaction.transferAccountId === account.id || !accounts.some((target) => target.id === transaction.transferAccountId && !target.closed)))) {
+          return reply.code(400).send({ message: 'Choose a different active transfer account for each included transfer.' });
         }
         if (options.categoryCatalog && options.categorySource) {
           await options.categoryCatalog.refresh(options.categorySource);
@@ -751,6 +757,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validateReviewUpdate(value: unknown): ReviewUpdate {
   if (!isRecord(value)) throw new StatementManagementError('EMPTY_REVIEW_UPDATE');
   const update: ReviewUpdate = {};
+  if ('transferAccountId' in value) {
+    if (value.transferAccountId !== null && (typeof value.transferAccountId !== 'string' || !value.transferAccountId.trim())) {
+      throw new StatementManagementError('EMPTY_REVIEW_UPDATE');
+    }
+    update.transferAccountId = value.transferAccountId as string | null;
+  }
   if ('actualCategoryId' in value) {
     if (value.actualCategoryId !== null && (typeof value.actualCategoryId !== 'string' || !value.actualCategoryId.trim())) {
       throw new StatementManagementError('EMPTY_REVIEW_UPDATE');

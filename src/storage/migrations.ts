@@ -47,6 +47,7 @@ export interface DatabaseSchema {
   };
   statement_transactions: {
     actual_category_id: string | null;
+    transfer_account_id: Generated<string | null>;
     amount_cents: number;
     date: string;
     description: string;
@@ -247,6 +248,13 @@ const migrations: Migration[] = [
         .alterTable('actual_categories')
         .addColumn('position', 'integer', (column) => column.notNull().defaultTo(0))
         .execute();
+    },
+  },
+  {
+    name: '009_transaction_transfers',
+    async up(database) {
+      await database.schema.alterTable('statement_transactions')
+        .addColumn('transfer_account_id', 'text').execute();
     },
   },
 ];

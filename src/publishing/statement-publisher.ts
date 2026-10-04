@@ -11,6 +11,7 @@ export interface ActualTransaction {
   date: string;
   id: string;
   imported_id?: string | null;
+  transfer_id?: string | null;
   imported_payee?: string;
   notes?: string;
   payee?: string | null;
@@ -21,6 +22,8 @@ export interface ActualBudgetPublisher {
   importTransactions(accountId: string, transactions: Omit<ActualTransaction, 'id'>[]): Promise<void>;
   findTransactions(accountId: string, startDate: string, endDate: string): Promise<ActualTransaction[]>;
   resolvePayee(name: string): Promise<string>;
+  resolveTransferPayee?(accountId: string, sourceAccountId: string): Promise<{ payeeId: string; categoryAllowed: boolean }>;
+  verifyTransfer?(id: string, accountId: string, targetAccountId: string, values: Omit<ActualTransaction, 'id'>, transferCategoryId: string | null): Promise<void>;
   synchronize(): Promise<void>;
   updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void>;
 }
@@ -64,35 +67,39 @@ export class StatementPublisher {
           .where('statement_transaction_id', 'in', includedTransactions.map((transaction) => transaction.id))
           .execute();
         const recordsByTransactionId = new Map(publicationRecords.map((record) => [record.statement_transaction_id, record]));
-        const pending = includedTransactions
-          .filter((transaction) => !recordsByTransactionId.get(transaction.id)?.actual_transaction_id)
-          .map((transaction) => ({
-          amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
-          category: transaction.actual_category_id,
-          cleared: true,
-          date: actualDate(transaction.reviewed_date ?? transaction.date),
-          imported_id: transaction.stable_import_id,
-          imported_payee: transaction.description,
-          notes: '',
-          payee_name: transaction.reviewed_description ?? transaction.description,
+        const reviewedTransactions = await Promise.all(includedTransactions.map(async (transaction) => {
+          const transfer = transaction.transfer_account_id
+            ? await this.actualBudget.resolveTransferPayee?.(transaction.transfer_account_id, accountId)
+            : null;
+          if (transaction.transfer_account_id && !transfer) throw new Error('Actual Budget transfers are unavailable.');
+          return {
+            transaction,
+            amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
+            category: transfer && !transfer.categoryAllowed ? null : transaction.actual_category_id,
+            cleared: true,
+            date: actualDate(transaction.reviewed_date ?? transaction.date),
+            imported_payee: transaction.description,
+            notes: '',
+            ...(transfer ? { payee: transfer.payeeId } : {}),
+            payee_name: transaction.reviewed_description ?? transaction.description,
+          };
+        }));
+        const pending = reviewedTransactions
+          .filter(({ transaction }) => !recordsByTransactionId.get(transaction.id)?.actual_transaction_id)
+          .map(({ transaction, payee_name, ...values }) => ({
+            ...values,
+            ...(values.payee ? {} : { payee_name }),
+            imported_id: transaction.stable_import_id,
           }));
         if (pending.length > 0) await this.actualBudget.importTransactions(accountId, pending);
 
-        const reviewedTransactions = includedTransactions.map((transaction) => ({
-          transaction,
-          amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
-          category: transaction.actual_category_id,
-          cleared: true,
-          date: actualDate(transaction.reviewed_date ?? transaction.date),
-          imported_payee: transaction.description,
-          notes: '',
-          payee_name: transaction.reviewed_description ?? transaction.description,
-        }));
         const pendingImportIds = new Set(pending.map((transaction) => transaction.imported_id));
         const pendingReviewed = reviewedTransactions.filter(({ transaction }) => pendingImportIds.has(transaction.stable_import_id));
         const dates = pendingReviewed.map(({ date }) => date).sort();
         const actualTransactions = dates.length > 0
-          ? await this.actualBudget.findTransactions(accountId, dates[0]!, dates[dates.length - 1]!)
+          ? await this.actualBudget.findTransactions(accountId,
+            pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[0]!, -7) : dates[0]!,
+            pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[dates.length - 1]!, 7) : dates[dates.length - 1]!)
           : [];
         const byImportId = new Map(actualTransactions
           .filter((transaction) => transaction.imported_id)
@@ -106,7 +113,7 @@ export class StatementPublisher {
           if (!actualTransactionId) {
             throw new Error('Actual Budget did not reconcile an imported transaction.');
           }
-          const payee = await this.actualBudget.resolvePayee(reviewed.payee_name);
+          const payee = reviewed.payee ?? await this.actualBudget.resolvePayee(reviewed.payee_name);
           await this.actualBudget.updateTransaction(actualTransactionId, {
             amount: reviewed.amount,
             category: reviewed.category ?? null,
@@ -116,6 +123,10 @@ export class StatementPublisher {
             notes: '',
             payee,
           });
+          if (transaction.transfer_account_id) {
+            if (!this.actualBudget.verifyTransfer) throw new Error('Actual Budget transfer verification is unavailable.');
+            await this.actualBudget.verifyTransfer(actualTransactionId, accountId, transaction.transfer_account_id, { ...reviewed, payee }, transaction.actual_category_id);
+          }
           await this.database
             .insertInto('publication_records')
             .values({
@@ -219,4 +230,10 @@ function actualDate(value: string): string {
   const dayFirstDate = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
   if (!dayFirstDate) throw new Error('Invalid transaction date.');
   return `${dayFirstDate[3]}-${dayFirstDate[2]}-${dayFirstDate[1]}`;
+}
+
+function offsetDate(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
