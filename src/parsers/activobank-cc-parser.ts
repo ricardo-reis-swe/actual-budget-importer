@@ -3,7 +3,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { BankParser, ParsedTransaction } from './bank-parser.js';
 import type { PositionedText } from './generic-table-extractor.js';
 
-const datePattern = /^\d{4}\/\d{2}\/\d{2}$/;
+const datePattern = /^(?:\d{4}\/)?\d{2}\/\d{2}$/;
 
 export const activoBankCcParser: BankParser = {
   id: 'activobank-cc',
@@ -32,16 +32,15 @@ export function parseActivoBankCcPages(
   pages: readonly (readonly PositionedText[])[],
 ): readonly ParsedTransaction[] {
   const transactions: ParsedTransaction[] = [];
+  const pageRows = pages.map(groupRows);
+  const period = pageRows.flat().map((row) => row.chunks.toSorted((a, b) => a.x - b.x)
+    .map((chunk) => chunk.text.trim()).join(' '))
+    .find((text) => /Extrato de:.*\d{4}\/\d{2}\/\d{2}\s+a\s+\d{4}\/\d{2}\/\d{2}/i.test(text))
+    ?.match(/(\d{4}\/\d{2}\/\d{2})\s+a\s+(\d{4}\/\d{2}\/\d{2})/) ?? undefined;
   let inMovements = false;
   let columns: { description: number; network: number; debit: number; credit: number } | undefined;
 
-  for (const page of pages) {
-    const rows: { y: number; chunks: PositionedText[] }[] = [];
-    for (const chunk of page.toSorted((a, b) => b.y - a.y || a.x - b.x)) {
-      const row = rows.find((candidate) => Math.abs(candidate.y - chunk.y) <= 3);
-      if (row) row.chunks.push(chunk);
-      else rows.push({ y: chunk.y, chunks: [chunk] });
-    }
+  for (const rows of pageRows) {
     let current: ParsedTransaction | undefined;
     for (const row of rows) {
       const chunks = row.chunks.toSorted((a, b) => a.x - b.x);
@@ -76,11 +75,12 @@ export function parseActivoBankCcPages(
       const dates = chunks.filter((chunk) => chunk.x < layout.description)
         .flatMap((chunk) => chunk.text.trim().split(/\s+/)).filter((value) => datePattern.test(value));
       if (dates.length > 0) {
-        const date = normalizeDate(dates[0]!);
-        const description = chunks.filter((chunk) => chunk.x >= layout.description - 3 && chunk.x < layout.debit - 25)
+        const movementDate = resolveMovementDate(dates[0]!, period);
+        const date = normalizeDate(movementDate);
+        const description = chunks.filter((chunk) => chunk.x >= layout.description - 3 && chunk.x < layout.network - 3)
           .map((chunk) => chunk.text.trim()).join(' ').trim();
         const amounts = chunks.filter((chunk) => chunk.x >= layout.debit - 25);
-        if (dates.length !== 2 || !date || !normalizeDate(dates[1]!) || !description || amounts.length !== 1) {
+        if (dates.length !== 2 || !date || !normalizeDate(resolveValueDate(dates[1]!, movementDate)) || !description || amounts.length !== 1) {
           throw new Error('Invalid ActivoBank CC transaction row.');
         }
         const amount = parseAmount(amounts[0]!.text);
@@ -98,6 +98,39 @@ export function parseActivoBankCcPages(
     }
   }
   return transactions;
+}
+
+function groupRows(page: readonly PositionedText[]): { y: number; chunks: PositionedText[] }[] {
+  const rows: { y: number; chunks: PositionedText[] }[] = [];
+  for (const chunk of page.toSorted((a, b) => b.y - a.y || a.x - b.x)) {
+    const row = rows.find((candidate) => Math.abs(candidate.y - chunk.y) <= 3);
+    if (row) row.chunks.push(chunk);
+    else rows.push({ y: chunk.y, chunks: [chunk] });
+  }
+  return rows;
+}
+
+function resolveMovementDate(value: string, period: RegExpMatchArray | undefined): string {
+  if (value.length === 10) return value;
+  if (!period || !normalizeDate(period[1]!) || !normalizeDate(period[2]!) || period[1]! > period[2]!) {
+    throw new Error('Missing or invalid ActivoBank CC statement period for transaction dates.');
+  }
+  const candidates: string[] = [];
+  for (let year = Number(period[1]!.slice(0, 4)); year <= Number(period[2]!.slice(0, 4)); year += 1) {
+    const candidate = `${year}/${value}`;
+    if (normalizeDate(candidate) && candidate >= period[1]! && candidate <= period[2]!) candidates.push(candidate);
+  }
+  if (candidates.length !== 1) throw new Error('Invalid ActivoBank CC transaction row.');
+  return candidates[0]!;
+}
+
+function resolveValueDate(value: string, movementDate: string): string {
+  if (value.length === 10) return value;
+  let year = Number(movementDate.slice(0, 4));
+  const monthDifference = Number(value.slice(0, 2)) - Number(movementDate.slice(5, 7));
+  if (monthDifference < -6) year += 1;
+  else if (monthDifference > 6) year -= 1;
+  return `${year}/${value}`;
 }
 
 function normalizeDate(value: string): string | undefined {
