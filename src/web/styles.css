@@ -1127,3 +1127,16 @@ form button {
         animation: none;
     }
 }
+
+.category-warning {
+    color: #9a3412;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+.transaction-category-warning {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+}

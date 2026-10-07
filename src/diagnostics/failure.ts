@@ -40,6 +40,13 @@ export function createSanitizedFailure(
 export function toUserFailure(failure: SanitizedFailure): UserFailure {
   return {
     diagnosticId: failure.diagnosticId,
-    message: `The statement ${failure.stage} failed. Try again or contact support with reference ${failure.diagnosticId}.`,
+    message: `The statement ${failure.stage} failed. Try again. If it keeps failing, check the application logs for reference ${failure.diagnosticId}.`,
   };
+}
+
+export function currentFailureMessage(message: string | null): string | null {
+  return message?.replace(
+    /Try again or contact support with reference ([\w-]+)\.$/,
+    'Try again. If it keeps failing, check the application logs for reference $1.',
+  ) ?? null;
 }

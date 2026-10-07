@@ -72,7 +72,7 @@ export function GroupedCategorySelect({
     groups={activeGroups}
     {...(id === undefined ? {} : { id })}
     onChange={onChange}
-    {...(selected ? { selectedLabel: <CategoryPathLabel categoryId={value} groups={groups} /> } : {})}
+    {...(selected || value ? { selectedLabel: <CategoryPathLabel categoryId={value} groups={groups} /> } : {})}
     value={value}
   />;
 }

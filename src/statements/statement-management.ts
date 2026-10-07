@@ -2,6 +2,7 @@ import { type Kysely } from 'kysely';
 
 import { type DatabaseSchema } from '../storage/migrations.js';
 import { type CategorizationRuleMatcher, type RuleMatch } from '../rules/categorization-rules.js';
+import { currentFailureMessage } from '../diagnostics/failure.js';
 
 export interface StatementSummary {
   createdAt: string;
@@ -158,7 +159,7 @@ export class StatementManagement {
         : { id: statement.actual_account_id, name: statement.actual_account_name },
       createdAt: statement.created_at,
       diagnosticId: statement.diagnostic_id,
-      errorMessage: statement.error_message,
+      errorMessage: currentFailureMessage(statement.error_message),
       id: statement.id,
       originalFilename: statement.original_filename,
       paperless: {

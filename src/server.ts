@@ -32,6 +32,8 @@ import {
 } from './publishing/statement-publisher.js';
 import type { BankParser } from './parsers/bank-parser.js';
 import { CategoryCatalog, type ActualCategorySource } from './categories/category-catalog.js';
+import { isCategoryAvailable } from './categories/category-validation.js';
+import { messages } from './web/messages.js';
 import { ParserSettings, ParserSettingsError } from './parsers/parser-settings.js';
 import type { ActualAccountSource } from './publishing/actual-budget-client.js';
 
@@ -259,6 +261,17 @@ export function buildServer(options: ServerOptions): FastifyInstance {
         }
         if (options.categoryCatalog && options.categorySource) {
           await options.categoryCatalog.refresh(options.categorySource);
+        }
+        if (options.categoryCatalog && statement) {
+          const groups = await options.categoryCatalog.list();
+          const unavailable = statement.transactions.filter((transaction) => {
+            const target = accounts.find((candidate) => candidate.id === transaction.transferAccountId);
+            const categoryIgnored = target && (account.offBudget || !target.offBudget);
+            return !transaction.excluded && !categoryIgnored && !isCategoryAvailable(groups, transaction.actualCategoryId);
+          });
+          if (unavailable.length > 0) {
+            return reply.code(400).send({ message: messages.review.categoryWarning(unavailable.length) });
+          }
         }
         await publisher.publish(parseId(request.params.statementId), account);
         return reply.code(204).send();

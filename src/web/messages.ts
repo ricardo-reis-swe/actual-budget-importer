@@ -1,4 +1,8 @@
 export const messages = {
+  review: {
+    unavailableCategory: 'Category unavailable in Actual Budget. Select a current category or Uncategorized.',
+    categoryWarning: (count: number) => `${count} included transaction${count === 1 ? ' uses' : 's use'} a category that is no longer available in Actual Budget. Select a current category or Uncategorized for each affected transaction before publishing.`,
+  },
   transfer: {
     label: 'Transfer to/from account',
     ordinary: 'Not a transfer',

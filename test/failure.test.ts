@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createSanitizedFailure,
+  currentFailureMessage,
   toUserFailure,
 } from '../src/diagnostics/failure.js';
 
 describe('failure handling', () => {
+  it('updates previously stored support messages while preserving other errors and null', () => {
+    expect(currentFailureMessage('The statement publishing failed. Try again or contact support with reference diag-old.'))
+      .toBe('The statement publishing failed. Try again. If it keeps failing, check the application logs for reference diag-old.');
+    expect(currentFailureMessage('Select the original PDF again.')).toBe('Select the original PDF again.');
+    expect(currentFailureMessage(null)).toBeNull();
+  });
   it('creates a diagnostic record without retaining sensitive cause data', () => {
     const sensitiveCause = new Error(
       'token=top-secret description=Private purchase amount=12.34 category=Household',
@@ -35,7 +42,7 @@ describe('failure handling', () => {
     expect(toUserFailure(failure)).toEqual({
       diagnosticId: 'diag-456',
       message:
-        'The statement publishing failed. Try again or contact support with reference diag-456.',
+        'The statement publishing failed. Try again. If it keeps failing, check the application logs for reference diag-456.',
     });
   });
 });

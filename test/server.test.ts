@@ -11,6 +11,8 @@ import { CategorizationRules } from '../src/rules/categorization-rules.js';
 import type { BankParser } from '../src/parsers/bank-parser.js';
 import { ParserSettings } from '../src/parsers/parser-settings.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
+import { CategoryCatalog } from '../src/categories/category-catalog.js';
+import { StatementPublisher } from '../src/publishing/statement-publisher.js';
 
 function multipart(fields: Record<string, string>, pdf: Buffer): { contentType: string; payload: Buffer } {
   const boundary = 'synthetic-boundary';
@@ -53,6 +55,59 @@ async function createStatementServer() {
 }
 
 describe('server baseline', () => {
+  it.each(['ready for review', 'publish failed', 'published'])('rejects deleted categories before publishing a %s statement and allows corrected or excluded rows', async (status) => {
+    const setup = await createStatementServer();
+    await setup.app.close();
+    const { database, statement, transaction } = setup;
+    const catalog = new CategoryCatalog(database.db);
+    await catalog.refresh({ getCategoriesGrouped: async () => [{ id: 'group', name: 'Synthetic group', categories: [{ id: 'old', name: 'Old category' }] }] });
+    await database.db.updateTable('statement_transactions').set({ actual_category_id: 'old' }).where('id', '=', transaction.id).execute();
+    await database.db.updateTable('statements').set({ status }).where('id', '=', statement.id).execute();
+    const actual = {
+      importTransactions: vi.fn(), findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
+    };
+    const publisher = new StatementPublisher(database.db, actual);
+    const publish = vi.spyOn(publisher, 'publish').mockResolvedValue(undefined);
+    const app = buildServer({ database, statements: new StatementManagement(database.db), publisher,
+      categoryCatalog: catalog,
+      categorySource: { getCategoriesGrouped: async () => [{ id: 'group', name: 'Synthetic group', categories: [{ id: 'new', name: 'Current category' }] }] },
+      accountSource: { getAccounts: async () => [{ id: 'account', name: 'Synthetic account', closed: false, offBudget: false }] },
+    });
+    const request = { method: 'POST' as const, url: `/api/statements/${statement.id}/publish`, payload: { accountId: 'account', confirm: true } };
+    try {
+      const blocked = await app.inject(request);
+      expect(blocked.statusCode).toBe(400);
+      expect(blocked.json().message).toContain('1 included transaction uses a category that is no longer available');
+      expect(publish).not.toHaveBeenCalled();
+      expect(actual.importTransactions).not.toHaveBeenCalled();
+      expect(await database.db.selectFrom('statements').select(['status', 'actual_account_id']).where('id', '=', statement.id).executeTakeFirst())
+        .toEqual({ status, actual_account_id: null });
+      expect((await app.inject({ method: 'GET', url: `/api/statements/${statement.id}` })).json().transactions[0].actualCategoryId).toBe('old');
+      for (const categoryId of ['new', null]) {
+        await database.db.updateTable('statement_transactions').set({ actual_category_id: categoryId }).where('id', '=', transaction.id).execute();
+        expect((await app.inject(request)).statusCode).toBe(204);
+      }
+      await database.db.updateTable('statement_transactions').set({ actual_category_id: 'old', excluded: 1 }).where('id', '=', transaction.id).execute();
+      expect((await app.inject(request)).statusCode).toBe(204);
+      expect(publish).toHaveBeenCalledTimes(3);
+    } finally {
+      await app.close();
+      await database.close();
+    }
+  });
+
+  it('uses self-hosted guidance for previously saved statement errors', async () => {
+    const { app, database, statement } = await createStatementServer();
+    try {
+      await database.db.updateTable('statements').set({ diagnostic_id: 'diag-old',
+        error_message: 'The statement publishing failed. Try again or contact support with reference diag-old.',
+      }).where('id', '=', statement.id).execute();
+      const result = (await app.inject({ method: 'GET', url: `/api/statements/${statement.id}` })).json();
+      expect(result.errorMessage).toContain('check the application logs for reference diag-old');
+      expect(result.errorMessage).not.toContain('contact support');
+      expect(result.diagnosticId).toBe('diag-old');
+    } finally { await app.close(); await database.close(); }
+  });
   it('returns parser setup state and saves a complete parser selection', async () => {
     const database = new ApplicationDatabase(mkdtempSync(join(tmpdir(), 'actual-budget-importer-')));
     await database.migrate();
@@ -475,7 +530,7 @@ describe('server baseline', () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.json()).toMatchObject({
-      message: expect.stringContaining('contact support with reference'),
+      message: expect.stringContaining('check the application logs for reference'),
     });
     expect(response.body).not.toContain('private');
     expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('private');
