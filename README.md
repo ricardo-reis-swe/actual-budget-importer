@@ -10,6 +10,10 @@ can be uploaded directly or received from Paperless-ngx. Categories are loaded
 from Actual Budget, and new category groups and categories can be created from
 the importer.
 
+For older WiZink statements with separate operation and posting date columns,
+enable **WiZink (older format)** in parser settings before selecting it for an
+upload or Paperless-ngx correspondent.
+
 For ActivoBank credit-card statements, enable **ActivoBank CC** in parser
 settings, then select it in the upload form or configure its Paperless-ngx
 correspondent mapping.
