@@ -35,6 +35,7 @@ import { CategoryCatalog, type ActualCategorySource } from './categories/categor
 import { isCategoryAvailable } from './categories/category-validation.js';
 import { messages } from './web/messages.js';
 import { ParserSettings, ParserSettingsError } from './parsers/parser-settings.js';
+import type { DisplaySettings } from './settings/display-settings.js';
 import type { ActualAccountSource } from './publishing/actual-budget-client.js';
 
 export interface PaperlessStatementLifecycle {
@@ -68,6 +69,7 @@ export interface ServerOptions {
   categoryCatalog?: CategoryCatalog;
   categorySource?: ActualCategorySource;
   categorizationRules?: CategorizationRules;
+  displaySettings?: DisplaySettings;
   paperlessLifecycle?: PaperlessStatementLifecycle;
   paperlessControls?: PaperlessStatementControls;
   publisher?: StatementPublisher;
@@ -148,6 +150,18 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     });
   } else if (options.parsers) {
     app.get('/api/parsers', async () => ({ parsers: options.parsers }));
+  }
+
+  if (options.displaySettings) {
+    const displaySettings = options.displaySettings;
+    app.get('/api/settings', async () => ({ categoryPanel: await displaySettings.isCategoryPanelEnabled() }));
+    app.put<{ Body: unknown }>('/api/settings/category-panel', async (request, reply) => {
+      if (!isRecord(request.body) || typeof request.body.enabled !== 'boolean') {
+        return reply.code(400).send({ message: 'Provide whether the category panel should be shown.' });
+      }
+      await displaySettings.setCategoryPanel(request.body.enabled);
+      return reply.code(204).send();
+    });
   }
 
   app.addContentTypeParser(/^multipart\/form-data(?:;|$)/, { parseAs: 'buffer' }, (_request, body, done) => {

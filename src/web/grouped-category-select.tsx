@@ -72,6 +72,7 @@ export function GroupedCategorySelect({
     groups={activeGroups}
     {...(id === undefined ? {} : { id })}
     onChange={onChange}
+    panelMode
     {...(selected || value ? { selectedLabel: <CategoryPathLabel categoryId={value} groups={groups} /> } : {})}
     value={value}
   />;

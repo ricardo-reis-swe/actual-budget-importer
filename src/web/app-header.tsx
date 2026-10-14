@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export type HeaderModal = 'categories' | 'parserSettings' | 'rules';
+export type HeaderModal = 'categories' | 'settings' | 'rules';
 
 export function AppHeader({ onOpenModal }: { onOpenModal: (modal: HeaderModal) => void }) {
   const [actualConnected, setActualConnected] = useState<boolean>();
@@ -24,7 +24,7 @@ export function AppHeader({ onOpenModal }: { onOpenModal: (modal: HeaderModal) =
       </div>
     </div>
     <nav className="app-navigation" aria-label="Primary navigation">
-      <button type="button" className="button-link" onClick={() => onOpenModal('parserSettings')}>Parser settings</button>
+      <button type="button" className="button-link" onClick={() => onOpenModal('settings')}>Settings</button>
       <button type="button" className="button-link" onClick={() => onOpenModal('rules')}>Rules</button>
       <button type="button" className="button-link" onClick={() => onOpenModal('categories')}>Categories</button>
     </nav>

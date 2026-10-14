@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { GroupedParserSelect } from './grouped-parser-select.js';
+import { useDisplaySettings } from './display-settings.js';
 
 interface ParserSetting {
   countryCode: string;
@@ -55,6 +56,17 @@ export function ParserSettingsPage({ initialSetup = false, onDataChanged, onSetu
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState('');
   const [saving, setSaving] = useState(false);
+  const { categoryPanel, setCategoryPanel } = useDisplaySettings();
+  const [savingDisplay, setSavingDisplay] = useState(false);
+  const [displayError, setDisplayError] = useState<string>();
+
+  const toggleCategoryPanel = async (enabled: boolean) => {
+    setSavingDisplay(true);
+    setDisplayError(undefined);
+    const saved = await setCategoryPanel(enabled);
+    if (!saved) setDisplayError('The display preference could not be saved.');
+    setSavingDisplay(false);
+  };
 
   const load = () => {
     void fetch('/api/parser-settings')
@@ -140,10 +152,10 @@ export function ParserSettingsPage({ initialSetup = false, onDataChanged, onSetu
   return <main>
     <header className="page-heading">
       <p className="eyebrow">{initialSetup ? 'Welcome' : 'Configuration'}</p>
-      <h1>{initialSetup ? 'Choose your bank parsers' : 'Parser settings'}</h1>
+      <h1>{initialSetup ? 'Choose your bank parsers' : 'Settings'}</h1>
       <p>{initialSetup
-        ? 'Select the countries and individual bank parsers you want to see. You can change this later in Parser settings.'
-        : 'Choose which parsers appear in selection lists and match Paperless-ngx correspondents automatically.'}</p>
+        ? 'Select the countries and individual bank parsers you want to see. You can change this later in Settings.'
+        : 'Choose which parsers appear in selection lists, match Paperless-ngx correspondents automatically, and adjust how statement review is presented.'}</p>
     </header>
     {error && <p role="alert">{error}</p>}
     {feedback && <p className="rules-feedback" role="status">{feedback}</p>}
@@ -175,6 +187,16 @@ export function ParserSettingsPage({ initialSetup = false, onDataChanged, onSetu
         <button type="button" disabled={saving} onClick={() => void saveSelection()}>{saving ? 'Saving…' : initialSetup ? 'Save and continue' : 'Save parser selection'}</button>
       </div>
     </section>
+    {!initialSetup && <section className="settings-panel" aria-labelledby="display-settings-heading">
+      <h2 id="display-settings-heading">Display</h2>
+      <p>Choose how category selection is presented while reviewing statements.</p>
+      <label className="toggle-label">
+        <input type="checkbox" checked={categoryPanel} disabled={savingDisplay} onChange={(event) => void toggleCategoryPanel(event.target.checked)} />
+        <span>Show the category picker as a side panel</span>
+      </label>
+      <p>When enabled, choosing a category opens a panel from the right side of the screen instead of a dropdown.</p>
+      {displayError && <p role="alert">{displayError}</p>}
+    </section>}
     {!initialSetup && <section className="settings-panel" aria-labelledby="correspondent-rules-heading">
       <h2 id="correspondent-rules-heading">Paperless correspondent matching</h2>
       {!settings.paperlessConfigured

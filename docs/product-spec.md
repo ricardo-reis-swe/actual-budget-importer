@@ -149,18 +149,19 @@ people can use it.
 - For direct uploads, require parser selection for each new
   statement and never preselect a parser based on earlier
   uploads.
-- Provide parser settings in the application header. Let users
-  choose which installed parsers appear in parser dropdowns and
-  configure automatic Paperless correspondent-to-parser rules.
-- On the first application visit, open parser settings automatically
+- Provide Settings in the application header. Let users choose
+  which installed parsers appear in parser dropdowns, configure
+  automatic Paperless correspondent-to-parser rules, and choose
+  display preferences.
+- On the first application visit, open Settings automatically
   and ask the user to save their parser selection before continuing.
-- Group installed parsers by country in parser settings. Let users
+- Group installed parsers by country in Settings. Let users
   select or clear every parser for a country and override that choice
   for each individual parser.
 - Use country selection only as a bulk editing convenience. Persist
   the resulting visibility choice for each individual parser.
 - Keep the grouped country and individual parser controls available
-  from parser settings after initial setup is complete.
+  from Settings after initial setup is complete.
 - Use the same grouped dropdown pattern as category selection for parser
   selectors. Show country headings and country/parser paths when more than
   one country is available, and omit the redundant country label when all
@@ -503,6 +504,11 @@ people can use it.
   metadata for statements retrieved from Paperless-ngx.
 - Show statement transactions in an editable table with date,
   description, amount, category, and exclusion controls.
+- Let users choose whether category selection uses the grouped
+  dropdown or a side panel that opens from the right below the
+  application header and fills the remaining page height. Show
+  the same grouped options in both presentations, and keep parser
+  selectors as dropdowns.
 - Save pending review changes automatically and show whether
   they are saving, saved, or failed to save.
 - Before publishing, show a confirmation containing the included

@@ -19,6 +19,7 @@ import { activoBankCcParser } from './parsers/activobank-cc-parser.js';
 import { wizinkParser } from './parsers/wizink-parser.js';
 import { wizinkOldFormatParser } from './parsers/wizink-old-format-parser.js';
 import { ParserSettings } from './parsers/parser-settings.js';
+import { DisplaySettings } from './settings/display-settings.js';
 import { posbDbsParser } from './parsers/posb-dbs-parser.js';
 
 if (existsSync('.env')) {
@@ -31,6 +32,7 @@ await database.migrate(configuration.actualBudget.legacyAccountId);
 const parsers = [activoBankParser, activoBankCcParser, wizinkParser, wizinkOldFormatParser, posbDbsParser] as const;
 const paperlessClient = configuration.paperless ? new PaperlessClient(configuration.paperless) : undefined;
 const parserSettings = new ParserSettings(database.db, parsers, paperlessClient);
+const displaySettings = new DisplaySettings(database.db);
 const categorizationRules = new CategorizationRules(database.db);
 const directUploads = new DirectUploadProcessor(database.db, parsers, configuration.maximumPdfSizeBytes, undefined, categorizationRules, configuration.extractionTimeoutMs);
 const paperlessProcessor = configuration.paperless
@@ -61,6 +63,7 @@ const app = buildServer({
   accountSource: actualBudget,
   parsers,
   parserSettings,
+  displaySettings,
   publisher,
   statements: new StatementManagement(database.db, undefined, paperlessClient, categorizationRules),
 });

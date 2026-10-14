@@ -198,6 +198,21 @@
   categories. Group and label options by country only when the selector
   contains parsers from more than one country.
 
+## Display settings
+
+- Persist user interface display preferences in application settings
+  alongside parser-setup completion.
+- Provide `GET /api/settings` returning current display preferences,
+  including whether the category picker uses a side panel.
+- Provide `PUT /api/settings/category-panel` with the desired boolean
+  value to store that preference.
+- Render category pickers either as the shared grouped dropdown or as a
+  right-side panel that starts below the sticky application header and
+  fills the remaining viewport height. Use the same grouped option list
+  in both presentations.
+- Apply the preference only to category pickers. Keep parser selectors
+  on the grouped dropdown.
+
 ## Technology choices
 
 - Use Node.js as the application runtime.

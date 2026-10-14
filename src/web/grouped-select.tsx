@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { KeyboardEvent, ReactNode } from 'react';
 
+import { useCategoryPickerPanel } from './category-picker-panel.js';
+
 const MENU_MIN_HEIGHT = 192;
 const MENU_VIEWPORT_MARGIN = 8;
 
@@ -25,6 +27,22 @@ export function findGroupedOption(groups: readonly GroupedSelectGroup[], value: 
   return undefined;
 }
 
+export function GroupedSelectOptions({ emptyLabel, groups, onChoose, showGroupLabels, value }: {
+  emptyLabel: string;
+  groups: readonly GroupedSelectGroup[];
+  onChoose(value: string): void;
+  showGroupLabels: boolean;
+  value: string;
+}) {
+  return <>
+    <button type="button" role="option" aria-selected={!value} onClick={() => onChoose('')}>{emptyLabel}</button>
+    {groups.map((group) => <div className="category-picker-group" role="group" aria-label={group.label} key={group.id}>
+      {showGroupLabels && <div className="category-picker-group-heading" aria-hidden="true">{group.label}</div>}
+      {group.options.map((option) => <button type="button" role="option" aria-label={option.ariaLabel ?? (showGroupLabels ? `${group.label}/${option.label}` : option.label)} aria-selected={option.id === value} key={option.id} onClick={() => onChoose(option.id)}>{option.label}</button>)}
+    </div>)}
+  </>;
+}
+
 export function GroupedSelect({
   ariaLabel,
   disabled = false,
@@ -33,6 +51,7 @@ export function GroupedSelect({
   groups,
   id,
   onChange,
+  panelMode = false,
   selectedLabel,
   showGroupLabels = true,
   value,
@@ -44,6 +63,7 @@ export function GroupedSelect({
   groups: readonly GroupedSelectGroup[];
   id?: string;
   onChange(value: string): void;
+  panelMode?: boolean;
   selectedLabel?: ReactNode;
   showGroupLabels?: boolean;
   value: string;
@@ -53,9 +73,29 @@ export function GroupedSelect({
   const [menuPosition, setMenuPosition] = useState<{ height?: number; left: number; top: number; width: number }>({ left: 0, top: 0, width: 240 });
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const panel = useCategoryPickerPanel();
+  const usePanel = panel.enabled && panelMode;
+  const panelActive = usePanel && panel.activeSource === trigger;
 
   const close = () => setOpen(false);
   const toggle = () => {
+    if (usePanel) {
+      if (panelActive) {
+        panel.close();
+      } else {
+        panel.open({
+          emptyLabel,
+          groups,
+          onChoose: (optionId: string) => onChange(optionId),
+          showGroupLabels,
+          source: trigger,
+          trigger: trigger.current,
+          value,
+          ...(ariaLabel === undefined ? {} : { ariaLabel }),
+        });
+      }
+      return;
+    }
     if (!open && trigger.current) {
       const bounds = trigger.current.getBoundingClientRect();
       const preferredTop = bounds.bottom + 4;
@@ -130,9 +170,13 @@ export function GroupedSelect({
     : emptyLabel;
 
   return <span className="category-picker">
-    <button ref={trigger} type="button" className="grouped-category-select" aria-expanded={open} aria-haspopup="listbox" aria-label={ariaLabel} disabled={disabled} id={id} onClick={toggle} onKeyDown={(event) => {
+    <button ref={trigger} type="button" className="grouped-category-select" aria-expanded={usePanel ? panelActive : open} aria-haspopup="listbox" aria-label={ariaLabel} disabled={disabled} id={id} onClick={toggle} onKeyDown={(event) => {
       if (event.key !== 'ArrowDown') return;
       event.preventDefault();
+      if (usePanel) {
+        if (!panelActive) toggle();
+        return;
+      }
       if (!open) toggle();
       requestAnimationFrame(() => {
         const selectedOption = menu.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]');
@@ -142,11 +186,7 @@ export function GroupedSelect({
       <span>{selectedLabel ?? defaultSelectedLabel}</span><span className="category-picker-arrow" aria-hidden="true">▾</span>
     </button>
     {open && createPortal(<div ref={menu} className={`category-picker-menu${fillRemainingViewport ? ' category-picker-menu-remaining-viewport' : ''}`} role="listbox" aria-label={ariaLabel ?? 'Options'} style={menuPosition} onKeyDown={navigateMenu}>
-      <button type="button" role="option" aria-selected={!value} onClick={() => choose('')}>{emptyLabel}</button>
-      {groups.map((group) => <div className="category-picker-group" role="group" aria-label={group.label} key={group.id}>
-        {showGroupLabels && <div className="category-picker-group-heading" aria-hidden="true">{group.label}</div>}
-        {group.options.map((option) => <button type="button" role="option" aria-label={option.ariaLabel ?? (showGroupLabels ? `${group.label}/${option.label}` : option.label)} aria-selected={option.id === value} key={option.id} onClick={() => choose(option.id)}>{option.label}</button>)}
-      </div>)}
+      <GroupedSelectOptions emptyLabel={emptyLabel} groups={groups} onChoose={choose} showGroupLabels={showGroupLabels} value={value} />
     </div>, document.body)}
   </span>;
 }
