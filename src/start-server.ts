@@ -69,6 +69,7 @@ await app.listen({ host: '0.0.0.0', port: configuration.port });
 
 async function close(): Promise<void> {
   await app.close();
+  await actualBudget.close();
   await database.close();
 }
 

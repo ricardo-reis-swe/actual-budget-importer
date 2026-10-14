@@ -162,13 +162,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@actual-app/api@26.9.0': 03f31a7bc2c0e9d7a67162e9858f2d57e9276958c6fdd01d082173364d6ac9a8
+
 importers:
 
   .:
     dependencies:
       '@actual-app/api':
         specifier: ^26.9.0
-        version: 26.9.0
+        version: 26.9.0(patch_hash=03f31a7bc2c0e9d7a67162e9858f2d57e9276958c6fdd01d082173364d6ac9a8)
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
@@ -1375,7 +1378,7 @@ packages:
 
 snapshots:
 
-  '@actual-app/api@26.9.0':
+  '@actual-app/api@26.9.0(patch_hash=03f31a7bc2c0e9d7a67162e9858f2d57e9276958c6fdd01d082173364d6ac9a8)':
     dependencies:
       '@actual-app/core': 26.9.0
       '@actual-app/crdt': 3.1.1

@@ -21,6 +21,7 @@ export interface ActualAccountSource {
 
 export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategorySource, ActualAccountSource {
   private queue = Promise.resolve();
+  private initialized = false;
 
   constructor(private readonly configuration: ApplicationConfiguration) {}
 
@@ -170,8 +171,23 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     this.queue = new Promise<void>((resolve) => { release = resolve; });
     await previous;
     try {
-      const dataDirectory = join(this.configuration.dataDirectory, 'actual-cache');
-      await mkdir(dataDirectory, { recursive: true });
+      await this.ensureBudget();
+      // Actual only propagates changes when asked; sync before and after
+      // each operation so remote edits become visible and local mutations
+      // reach the server, matching the previous open-once-per-call lifecycle.
+      await actual.sync();
+      return await operation();
+    } finally {
+      await actual.sync().catch(() => undefined);
+      release();
+    }
+  }
+
+  private async ensureBudget(): Promise<void> {
+    if (this.initialized) return;
+    const dataDirectory = join(this.configuration.dataDirectory, 'actual-cache');
+    await mkdir(dataDirectory, { recursive: true });
+    try {
       await actual.init({
         verbose: false,
         dataDir: dataDirectory,
@@ -181,13 +197,29 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       await actual.downloadBudget(this.configuration.actualBudget.budgetId, this.configuration.actualBudget.encryptionPassword
         ? { password: this.configuration.actualBudget.encryptionPassword }
         : undefined);
-      return await operation();
-    } finally {
-      try {
+      this.initialized = true;
+    } catch (error) {
+      // A half-initialized Actual client cannot be reused; reset it so the
+      // next operation starts clean.
+      await actual.shutdown().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async close(): Promise<void> {
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      if (this.initialized) {
         await actual.shutdown();
-      } finally {
-        release();
+        this.initialized = false;
       }
+    } catch {
+      // Shutdown is best effort; the next launch recovers through Actual's own checks.
+    } finally {
+      release();
     }
   }
 }
