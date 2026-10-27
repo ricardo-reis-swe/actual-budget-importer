@@ -4,6 +4,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 
 import { useCategoryPickerPanel } from './category-picker-panel.js';
 
+const MENU_MAX_HEIGHT = 22 * 16;
 const MENU_MIN_HEIGHT = 192;
 const MENU_VIEWPORT_MARGIN = 8;
 
@@ -70,7 +71,7 @@ export function GroupedSelect({
 }) {
   const selected = findGroupedOption(groups, value);
   const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ height?: number; left: number; top: number; width: number }>({ left: 0, top: 0, width: 240 });
+  const [menuPosition, setMenuPosition] = useState<{ bottom?: number; height?: number; left: number; maxHeight?: number; top?: number; width: number }>({ left: 0, top: 0, width: 240 });
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const panel = useCategoryPickerPanel();
@@ -99,19 +100,30 @@ export function GroupedSelect({
     if (!open && trigger.current) {
       const bounds = trigger.current.getBoundingClientRect();
       const preferredTop = bounds.bottom + 4;
-      const maximumHeight = Math.max(0, window.innerHeight - (MENU_VIEWPORT_MARGIN * 2));
-      const minimumHeight = Math.min(MENU_MIN_HEIGHT, maximumHeight);
-      const remainingHeight = Math.max(0, window.innerHeight - preferredTop - MENU_VIEWPORT_MARGIN);
-      const height = Math.max(minimumHeight, remainingHeight);
-      const top = fillRemainingViewport
-        ? Math.max(MENU_VIEWPORT_MARGIN, Math.min(preferredTop, window.innerHeight - height - MENU_VIEWPORT_MARGIN))
-        : preferredTop;
-      setMenuPosition({
-        ...(fillRemainingViewport ? { height } : {}),
-        left: Math.max(MENU_VIEWPORT_MARGIN, Math.min(bounds.left, window.innerWidth - Math.max(bounds.width, 240) - MENU_VIEWPORT_MARGIN)),
-        top,
-        width: Math.max(bounds.width, 240),
-      });
+      const left = Math.max(MENU_VIEWPORT_MARGIN, Math.min(bounds.left, window.innerWidth - Math.max(bounds.width, 240) - MENU_VIEWPORT_MARGIN));
+      const width = Math.max(bounds.width, 240);
+      if (fillRemainingViewport) {
+        const maximumHeight = Math.max(0, window.innerHeight - (MENU_VIEWPORT_MARGIN * 2));
+        const minimumHeight = Math.min(MENU_MIN_HEIGHT, maximumHeight);
+        const remainingHeight = Math.max(0, window.innerHeight - preferredTop - MENU_VIEWPORT_MARGIN);
+        const height = Math.max(minimumHeight, remainingHeight);
+        setMenuPosition({
+          height,
+          left,
+          top: Math.max(MENU_VIEWPORT_MARGIN, Math.min(preferredTop, window.innerHeight - height - MENU_VIEWPORT_MARGIN)),
+          width,
+        });
+      } else {
+        const maximumHeight = Math.min(MENU_MAX_HEIGHT, Math.max(0, window.innerHeight - (MENU_VIEWPORT_MARGIN * 2)));
+        const minimumHeight = Math.min(MENU_MIN_HEIGHT, maximumHeight);
+        const spaceBelow = window.innerHeight - preferredTop - MENU_VIEWPORT_MARGIN;
+        const spaceAbove = bounds.top - 4 - MENU_VIEWPORT_MARGIN;
+        const openAbove = spaceBelow < minimumHeight && spaceAbove > spaceBelow;
+        const maxHeight = Math.min(maximumHeight, Math.max(0, openAbove ? spaceAbove : spaceBelow));
+        setMenuPosition(openAbove
+          ? { bottom: window.innerHeight - bounds.top + 4, left, maxHeight, width }
+          : { left, maxHeight, top: preferredTop, width });
+      }
     }
     setOpen((current) => !current);
   };
