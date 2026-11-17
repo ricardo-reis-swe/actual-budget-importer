@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseActivoBankRows } from '../src/parsers/activobank-parser.js';
 import {
   activoBankMalformedAmountRows,
+  activoBankMergedDateRows,
   activoBankRegressionRows,
 } from './fixtures/activobank-layout.js';
 
@@ -32,6 +33,29 @@ describe('ActivoBank parser layout profile', () => {
         date: '03-08-2026',
         description: 'Refund',
         amountCents: 1234,
+      },
+    ]);
+  });
+
+  it('splits posting and value dates merged into one cell, including after footer text', () => {
+    expect(parseActivoBankRows(activoBankMergedDateRows)).toEqual([
+      {
+        position: 0,
+        date: '2026-10-03',
+        description: 'COMPRA 0000 SYNTHETIC SHOP',
+        amountCents: -1234,
+      },
+      {
+        position: 1,
+        date: '2026-10-10',
+        description: 'DD SYNTHETIC INSURER',
+        amountCents: -5000,
+      },
+      {
+        position: 2,
+        date: '2026-10-15',
+        description: 'TRF DE SYNTHETIC',
+        amountCents: 20000,
       },
     ]);
   });

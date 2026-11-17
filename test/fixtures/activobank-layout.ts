@@ -13,6 +13,18 @@ export const activoBankRegressionRows = [
   ['05-08-2026', '', 'A TRANSPORTAR', '', '', '', '', '', '', '0,00', '2007,84'],
 ] as const;
 
+const blank = (count: number) => Array.from({ length: count }, () => '');
+
+export const activoBankMergedDateRows = [
+  ['', '26/10/30', '', '', 'EXT. N. 0001/001'],
+  ...statementHeaders.slice(1),
+  ['', '', 'SALDO INICIAL', ...blank(12), '1 000.00'],
+  ['10.03 10.03', '', 'COMPRA', '0000', 'SYNTHETIC', 'SHOP', ...blank(7), '12.34', '', '987.66'],
+  ['Banco ActivoBank, S.A. - Sede: Rua Exemplo, 1, 1000-000 Lisboa 10.10 10.10', '', 'DD', 'SYNTHETIC', 'INSURER', ...blank(8), '50.00', '', '937.66'],
+  ['10.15 10.16', '', 'TRF', 'DE', 'SYNTHETIC', ...blank(9), '200.00', '1 137.66'],
+  ['', '', '', 'A TRANSPORTAR', ...blank(11), '1 137.66'],
+];
+
 export const activoBankMalformedAmountRows = [
   ...statementHeaders,
   ['01-08-2026', '', 'Invalid', '', '', '', '', '', '', '1,234', '10,00'],

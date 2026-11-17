@@ -9,6 +9,7 @@ import {
 const headerRowCount = 29;
 const excludedRow = /Banco ActivoBank|Capital Social|A TRANSPORTAR/i;
 const transactionDate = /^(\d{1,2})[./-](\d{2})[./-](\d{2,4})$/;
+const mergedDates = /^(?:.*\s)?(\d{1,2}\.\d{2})\s+(\d{1,2}\.\d{2})$/;
 
 /**
  * Parser for the Portuguese ActivoBank account statement layout.
@@ -61,7 +62,8 @@ export function parseActivoBankRows(
   const statementYear = findStatementYear(rows) ?? new Date().getUTCFullYear();
   let previousBalance: number | undefined;
 
-  for (const originalRow of rows.slice(headerRowCount)) {
+  for (const extractedRow of rows.slice(headerRowCount)) {
+    const originalRow = splitMergedDates(extractedRow);
     if (excludedRow.test(originalRow.filter(Boolean).join(' '))) {
       continue;
     }
@@ -101,6 +103,17 @@ export function parseActivoBankRows(
   }
 
   return transactions;
+}
+
+/**
+ * Two-digit months narrow the gap between the posting and value date columns,
+ * so the table extractor can merge both dates into the first cell, sometimes
+ * after the page footer text that shares the line.
+ */
+function splitMergedDates(row: readonly string[]): readonly string[] {
+  const match = row[0]?.trim().match(mergedDates);
+  if (!match || row[1]?.trim()) return row;
+  return [match[1]!, match[2]!, ...row.slice(2)];
 }
 
 function mergeDescriptionColumns(row: readonly string[]): readonly string[] {
