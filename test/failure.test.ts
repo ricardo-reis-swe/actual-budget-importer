@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createFailureLogEntry,
   createSanitizedFailure,
+  DiagnosedFailure,
   currentFailureMessage,
   toUserFailure,
 } from '../src/diagnostics/failure.js';
@@ -68,5 +70,30 @@ describe('failure handling', () => {
       message:
         'The statement publishing failed. Try again. If it keeps failing, check the application logs for reference diag-456.',
     });
+  });
+
+  it('logs a scrubbed message and stack frames without values or configured secrets', () => {
+    const cause = new Error('Sync failed for "Private purchase" amount=12.34 with s3cr3t-pass at http://user:pw@actual.test');
+    const entry = createFailureLogEntry(createSanitizedFailure(cause, 'publishing', 'diag-7'), cause, ['s3cr3t-pass']);
+
+    expect(entry).toMatchObject({ diagnosticId: 'diag-7', stage: 'publishing', errorMessage: expect.stringContaining('Sync failed for') });
+    expect(entry.errorStack?.[0]).toMatch(/^at /);
+    const logged = JSON.stringify(entry);
+    for (const secret of ['Private purchase', '12.34', 's3cr3t-pass', 'user:pw']) expect(logged).not.toContain(secret);
+  });
+
+  it('describes plain error objects thrown by the Actual Budget API', () => {
+    const apiError = { type: 'APIError', message: 'No budget file is open' };
+    const entry = createFailureLogEntry(createSanitizedFailure(apiError, 'synchronization', 'diag-8'), apiError);
+
+    expect(entry).toMatchObject({ errorName: 'APIError', errorMessage: 'No budget file is open' });
+  });
+
+  it('logs the wrapped cause of a diagnosed failure under its original identifier', () => {
+    const failure = createSanitizedFailure(new Error('synthetic'), 'publishing', 'diag-9');
+    const diagnosed = new DiagnosedFailure(failure, new Error('synthetic outage'));
+
+    expect(diagnosed.failure.diagnosticId).toBe('diag-9');
+    expect(createFailureLogEntry(diagnosed.failure, diagnosed.cause)).toMatchObject({ diagnosticId: 'diag-9', errorMessage: 'synthetic outage' });
   });
 });

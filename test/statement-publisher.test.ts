@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { DiagnosedFailure } from '../src/diagnostics/failure.js';
 import { StatementPublisher } from '../src/publishing/statement-publisher.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
@@ -84,12 +85,14 @@ describe('statement publishing', () => {
       findTransactions: vi.fn(), resolvePayee: vi.fn(), synchronize: vi.fn(), updateTransaction: vi.fn(),
     });
 
-    await expect(publisher.publish(statement.id, destinationAccount)).rejects.toThrow('password=private');
+    const thrown = await publisher.publish(statement.id, destinationAccount).catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(DiagnosedFailure);
+    expect(thrown).toMatchObject({ message: 'password=private' });
 
     const saved = await database.db.selectFrom('statements').select(['diagnostic_id', 'error_message', 'status']).where('id', '=', statement.id).executeTakeFirstOrThrow();
     expect(saved.status).toBe('publish failed');
     expect(saved.error_message).not.toContain('private');
-    expect(saved.diagnostic_id).toBeTruthy();
+    expect(saved.diagnostic_id).toBe((thrown as DiagnosedFailure).failure.diagnosticId);
     await database.close();
   });
 

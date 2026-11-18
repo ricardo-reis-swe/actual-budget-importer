@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { createSanitizedFailure, toUserFailure } from '../diagnostics/failure.js';
+import { createSanitizedFailure, DiagnosedFailure, toUserFailure } from '../diagnostics/failure.js';
 import { type DatabaseSchema } from '../storage/migrations.js';
 import { type Kysely } from 'kysely';
 
@@ -161,7 +161,7 @@ export class StatementPublisher {
         })
         .where('id', '=', statementId)
         .execute();
-      throw cause;
+      throw new DiagnosedFailure(failure, cause);
     } finally {
       this.publishing.delete(statementId);
     }

@@ -4,8 +4,11 @@ import { extname, resolve, sep } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import {
+  createFailureLogEntry,
   createSanitizedFailure,
+  DiagnosedFailure,
   toUserFailure,
+  type FailureLogEntry,
   type ProcessingStage,
   type SanitizedFailure,
 } from './diagnostics/failure.js';
@@ -55,7 +58,7 @@ export interface DatabaseHealth {
 }
 
 export interface ApplicationLogger {
-  error(failure: SanitizedFailure): void;
+  error(failure: FailureLogEntry): void;
   info?(event: Record<string, unknown>): void;
 }
 
@@ -64,6 +67,7 @@ export interface ServerOptions {
   database: DatabaseHealth;
   frontendDirectory?: string;
   logger?: ApplicationLogger;
+  logSecrets?: readonly string[];
   directUploads?: DirectUploadProcessor;
   categoryCreation?: CategoryCreation;
   categoryCatalog?: CategoryCatalog;
@@ -91,15 +95,18 @@ function logFailure(
   logger: ApplicationLogger,
   cause: unknown,
   stage: ProcessingStage,
+  secrets: readonly string[] = [],
 ): SanitizedFailure {
-  const failure = createSanitizedFailure(cause, stage);
-  logger.error(failure);
+  const diagnosed = cause instanceof DiagnosedFailure ? cause : undefined;
+  const failure = diagnosed?.failure ?? createSanitizedFailure(cause, stage);
+  logger.error(createFailureLogEntry(failure, diagnosed ? diagnosed.cause : cause, secrets));
   return failure;
 }
 
 export function buildServer(options: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const logger = options.logger ?? consoleLogger;
+  const logSecrets = options.logSecrets ?? [];
 
   if (options.parserSettings) {
     app.get('/api/parsers', async () => ({ parsers: await options.parserSettings!.listParsers() }));
@@ -178,7 +185,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       await options.database.checkHealth();
       return { status: 'ok' };
     } catch (cause) {
-      logFailure(logger, cause, 'synchronization');
+      logFailure(logger, cause, 'synchronization', logSecrets);
       return reply.code(503).send({ status: 'unavailable' });
     }
   });
@@ -189,7 +196,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       await options.categorySource.getCategoriesGrouped();
       return { connected: true };
     } catch (cause) {
-      logFailure(logger, cause, 'synchronization');
+      logFailure(logger, cause, 'synchronization', logSecrets);
       return reply.code(503).send({ connected: false });
     }
   });
@@ -588,7 +595,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       }
       return reply.code(415).send({ message: 'Unsupported content type.' });
     }
-    const failure = logFailure(logger, error, 'synchronization');
+    const failure = logFailure(logger, error, 'synchronization', logSecrets);
     return reply.code(500).send(toUserFailure(failure));
   });
 

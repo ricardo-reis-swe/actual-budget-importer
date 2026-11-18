@@ -52,6 +52,11 @@ await publisher.recoverInterruptedPublishing();
 
 const app = buildServer({
   database,
+  logSecrets: [
+    configuration.actualBudget.password,
+    configuration.actualBudget.encryptionPassword,
+    configuration.paperless?.apiToken,
+  ].filter((secret): secret is string => Boolean(secret)),
   frontendDirectory: resolve('dist'),
   directUploads,
   ...(paperlessLifecycle ? { paperlessLifecycle } : {}),
