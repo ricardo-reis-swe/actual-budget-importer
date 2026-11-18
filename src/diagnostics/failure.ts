@@ -12,6 +12,8 @@ export interface SanitizedFailure {
   readonly stage: ProcessingStage;
   readonly status: 'failed';
   readonly errorCode: 'PROCESSING_FAILED';
+  readonly errorName?: string;
+  readonly errorReason?: string;
 }
 
 export interface UserFailure {
@@ -19,21 +21,31 @@ export interface UserFailure {
   readonly message: string;
 }
 
+const safeErrorName = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const safeErrorReason = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
 /**
- * Produces the only failure payload suitable for application logs. The cause
- * is deliberately not inspected or retained because it may contain financial
- * data, credentials, or a stack trace.
+ * Produces the only failure payload suitable for application logs. The cause's
+ * message, stack, and metadata are never retained because they may contain
+ * financial data or credentials; only its class name and a machine-readable
+ * reason code (such as Actual Budget's sync reasons) are kept when they are
+ * short identifiers.
  */
 export function createSanitizedFailure(
-  _cause: unknown,
+  cause: unknown,
   stage: ProcessingStage,
   diagnosticId: string = randomUUID(),
 ): SanitizedFailure {
+  const errorName = cause instanceof Error ? cause.constructor.name : undefined;
+  const reason = cause instanceof Error ? (cause as { code?: unknown; reason?: unknown }) : undefined;
+  const errorReason = [reason?.code, reason?.reason].find((value) => typeof value === 'string');
   return {
     diagnosticId,
     stage,
     status: 'failed',
     errorCode: 'PROCESSING_FAILED',
+    ...(errorName && errorName !== 'Error' && safeErrorName.test(errorName) ? { errorName } : {}),
+    ...(typeof errorReason === 'string' && safeErrorReason.test(errorReason) ? { errorReason } : {}),
   };
 }
 
