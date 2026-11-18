@@ -74,6 +74,12 @@ people can use it.
   **Home**/Bills, in transaction review and rule interfaces.
 - Users can create, rename, and remove Actual Budget categories
   from their existing category group cards.
+- Users can rename a category group and move a category to another
+  group. Moving keeps the category's ID, so its transactions and
+  rules keep it.
+- When removing a category, let users choose another category to
+  receive its transactions in Actual Budget and its assignments in
+  this app's transactions and rules, which merges the two categories.
 - Require confirmation before removing a category from Actual
   Budget.
 - Users can explicitly create reusable rules such as:

@@ -96,12 +96,18 @@
 - Provide `POST /api/categories` with a confirmed category name and
   an existing Actual Budget category group ID.
 - Provide `PATCH /api/categories/:categoryId` with a non-empty category
-  name to rename an existing category.
+  name and an optional existing category group ID to rename an
+  existing category or move it to another group.
+- Provide `PATCH /api/category-groups/:groupId` with a non-empty group
+  name to rename an existing category group.
 - Provide `DELETE /api/categories/:categoryId` with explicit confirmation
-  to remove a category.
-- Apply category creation, renaming, and removal through the official
-  `@actual-app/api` package and refresh the local category cache after
-  each change.
+  and an optional `transferCategoryId` to remove a category. With a
+  transfer category, Actual Budget moves the removed category's
+  transactions to it, and the app then reassigns its stored transactions
+  and categorization rules from the removed category to it.
+- Apply category and group creation, renaming, moving, and removal
+  through the official `@actual-app/api` package and refresh the local
+  category cache after each change.
 
 ## Actual Budget publishing procedure
 

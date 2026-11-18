@@ -11,12 +11,13 @@ export interface ActualCategoryGroup {
 export interface ActualCategoryCreator {
   createCategory(groupId: string, name: string): Promise<ActualCategory>;
   createCategoryGroup(name: string): Promise<ActualCategoryGroup>;
-  deleteCategory(id: string): Promise<void>;
-  updateCategory(id: string, name: string): Promise<ActualCategory>;
+  deleteCategory(id: string, transferCategoryId?: string): Promise<void>;
+  updateCategory(id: string, name: string, groupId?: string): Promise<ActualCategory>;
+  updateCategoryGroup(id: string, name: string): Promise<ActualCategoryGroup>;
 }
 
 export class CategoryCreationError extends Error {
-  constructor(readonly code: 'CATEGORY_CREATION_NOT_CONFIRMED' | 'CATEGORY_DELETION_NOT_CONFIRMED' | 'CATEGORY_GROUP_CREATION_NOT_CONFIRMED' | 'INVALID_CATEGORY_ID' | 'INVALID_CATEGORY_GROUP' | 'INVALID_CATEGORY_NAME' | 'INVALID_CATEGORY_GROUP_NAME') {
+  constructor(readonly code: 'CATEGORY_CREATION_NOT_CONFIRMED' | 'CATEGORY_DELETION_NOT_CONFIRMED' | 'CATEGORY_GROUP_CREATION_NOT_CONFIRMED' | 'INVALID_CATEGORY_ID' | 'INVALID_CATEGORY_GROUP' | 'INVALID_TRANSFER_CATEGORY' | 'INVALID_CATEGORY_NAME' | 'INVALID_CATEGORY_GROUP_NAME') {
     super(code);
   }
 }
@@ -55,7 +56,7 @@ export class CategoryCreation {
     return this.actualBudget.createCategoryGroup(name);
   }
 
-  async update(input: { id: string; name: string }): Promise<ActualCategory> {
+  async update(input: { groupId?: string; id: string; name: string }): Promise<ActualCategory> {
     const id = input.id.trim();
     if (!id) {
       throw new CategoryCreationError('INVALID_CATEGORY_ID');
@@ -66,10 +67,31 @@ export class CategoryCreation {
       throw new CategoryCreationError('INVALID_CATEGORY_NAME');
     }
 
-    return this.actualBudget.updateCategory(id, name);
+    if (input.groupId === undefined) {
+      return this.actualBudget.updateCategory(id, name);
+    }
+    const groupId = input.groupId.trim();
+    if (!groupId) {
+      throw new CategoryCreationError('INVALID_CATEGORY_GROUP');
+    }
+    return this.actualBudget.updateCategory(id, name, groupId);
   }
 
-  async delete(input: { confirmed: boolean; id: string }): Promise<void> {
+  async updateGroup(input: { id: string; name: string }): Promise<ActualCategoryGroup> {
+    const id = input.id.trim();
+    if (!id) {
+      throw new CategoryCreationError('INVALID_CATEGORY_GROUP');
+    }
+
+    const name = input.name.trim();
+    if (!name) {
+      throw new CategoryCreationError('INVALID_CATEGORY_GROUP_NAME');
+    }
+
+    return this.actualBudget.updateCategoryGroup(id, name);
+  }
+
+  async delete(input: { confirmed: boolean; id: string; transferCategoryId?: string }): Promise<void> {
     if (!input.confirmed) {
       throw new CategoryCreationError('CATEGORY_DELETION_NOT_CONFIRMED');
     }
@@ -79,6 +101,14 @@ export class CategoryCreation {
       throw new CategoryCreationError('INVALID_CATEGORY_ID');
     }
 
-    await this.actualBudget.deleteCategory(id);
+    if (input.transferCategoryId === undefined) {
+      await this.actualBudget.deleteCategory(id);
+      return;
+    }
+    const transferCategoryId = input.transferCategoryId.trim();
+    if (!transferCategoryId || transferCategoryId === id) {
+      throw new CategoryCreationError('INVALID_TRANSFER_CATEGORY');
+    }
+    await this.actualBudget.deleteCategory(id, transferCategoryId);
   }
 }

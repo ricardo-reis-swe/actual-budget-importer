@@ -206,6 +206,39 @@ button:disabled {
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+.category-group-name {
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    text-align: left;
+}
+.category-group-name:hover,
+.category-group-name:focus-visible {
+    background: transparent;
+    text-decoration: underline;
+}
+.category-group-edit-form {
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid #314a9b;
+    border-radius: 0;
+    background: #405bbd;
+    padding: 0.4rem 0.5rem;
+}
+.category-group-edit-form input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.3rem 0.5rem;
+}
+.category-group-select {
+    margin-top: 0.35rem;
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+}
 .category-list {
     display: grid;
     list-style: none;

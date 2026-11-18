@@ -62,6 +62,15 @@ export class CategoryCatalog {
     return this.list();
   }
 
+  async reassign(fromCategoryId: string, toCategoryId: string): Promise<void> {
+    await this.database.transaction().execute(async (transaction) => {
+      await transaction.updateTable('statement_transactions').set({ actual_category_id: toCategoryId })
+        .where('actual_category_id', '=', fromCategoryId).execute();
+      await transaction.updateTable('categorization_rules').set({ category_id: toCategoryId })
+        .where('category_id', '=', fromCategoryId).execute();
+    });
+  }
+
   async list(): Promise<ActualCategoryGroup[]> {
     const groupRows = await this.database.selectFrom('actual_category_groups')
       .selectAll().orderBy('position').orderBy('name').execute();
