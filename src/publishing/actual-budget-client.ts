@@ -19,6 +19,8 @@ export interface ActualAccountSource {
   getAccounts(): Promise<readonly ActualAccount[]>;
 }
 
+export class ActualBudgetOperationError extends Error {}
+
 export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategorySource, ActualAccountSource {
   private queue = Promise.resolve();
   private initialized = false;
@@ -39,7 +41,7 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       reimportDeleted: false,
       },
     ).then((result) => {
-      if (result.errors.length > 0) throw new Error('Actual Budget rejected the transaction import.');
+      if (result.errors.length > 0) throw new ActualBudgetOperationError('Actual Budget rejected the transaction import.');
     }));
   }
 
@@ -69,10 +71,10 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       const target = accounts.find((account) => account.id === accountId);
       const source = accounts.find((account) => account.id === sourceAccountId);
       if (!source || !target || target.closed || accountId === sourceAccountId) {
-        throw new Error('Select an active transfer account different from the statement account.');
+        throw new ActualBudgetOperationError('Select an active transfer account different from the statement account.');
       }
       const payee = (await actual.getPayees()).find((candidate) => candidate.transfer_acct === accountId);
-      if (!payee) throw new Error('Actual Budget transfer payee is unavailable.');
+      if (!payee) throw new ActualBudgetOperationError('Actual Budget transfer payee is unavailable.');
       return { payeeId: payee.id, categoryAllowed: !source.offbudget && Boolean(source.offbudget) !== Boolean(target.offbudget) };
     });
   }
@@ -162,7 +164,7 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       if (transaction && matches(transaction)) return transaction;
       await delay(50);
     }
-    throw new Error('Actual Budget did not preserve the reviewed transaction or linked transfer.');
+    throw new ActualBudgetOperationError('Actual Budget did not preserve the reviewed transaction or linked transfer.');
   }
 
   private async withBudget<T>(operation: () => Promise<T>): Promise<T> {
@@ -175,12 +177,35 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       // Actual only propagates changes when asked; sync before and after
       // each operation so remote edits become visible and local mutations
       // reach the server, matching the previous open-once-per-call lifecycle.
-      await actual.sync();
-      return await operation();
+      let result: T;
+      try {
+        await actual.sync();
+        result = await operation();
+      } catch (error) {
+        if (error instanceof ActualBudgetOperationError) {
+          await actual.sync().catch(() => this.reset());
+        } else {
+          await this.reset();
+        }
+        throw error;
+      }
+      try {
+        await actual.sync();
+      } catch (error) {
+        await this.reset();
+        throw error;
+      }
+      return result;
     } finally {
-      await actual.sync().catch(() => undefined);
       release();
     }
+  }
+
+  // A failed sync or Actual error can leave the loaded budget unusable, so the
+  // next operation must initialize and download it again.
+  private async reset(): Promise<void> {
+    this.initialized = false;
+    await actual.shutdown().catch(() => undefined);
   }
 
   private async ensureBudget(): Promise<void> {
@@ -199,9 +224,7 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
         : undefined);
       this.initialized = true;
     } catch (error) {
-      // A half-initialized Actual client cannot be reused; reset it so the
-      // next operation starts clean.
-      await actual.shutdown().catch(() => undefined);
+      await this.reset();
       throw error;
     }
   }

@@ -32,6 +32,30 @@ describe('failure handling', () => {
     expect(JSON.stringify(failure)).not.toContain('Household');
   });
 
+  it('keeps only identifier-like error class and reason codes from the cause', () => {
+    class PostError extends Error {
+      readonly reason = 'network-failure';
+      readonly meta = { token: 'top-secret' };
+    }
+    const actualSyncError = Object.assign(new Error('Synthetic amount=12.34'), { code: 'out-of-sync' });
+    const unsafeReason = Object.assign(new Error('Synthetic'), { code: 'description=Private purchase' });
+
+    expect(createSanitizedFailure(new PostError('token=top-secret'), 'publishing', 'diag-1')).toMatchObject({
+      errorName: 'PostError',
+      errorReason: 'network-failure',
+    });
+    expect(createSanitizedFailure(actualSyncError, 'publishing', 'diag-2')).toEqual({
+      diagnosticId: 'diag-2',
+      stage: 'publishing',
+      status: 'failed',
+      errorCode: 'PROCESSING_FAILED',
+      errorReason: 'out-of-sync',
+    });
+    const unsafe = createSanitizedFailure(unsafeReason, 'publishing', 'diag-3');
+    expect(unsafe).not.toHaveProperty('errorReason');
+    expect(JSON.stringify(createSanitizedFailure(new PostError('token=top-secret'), 'publishing'))).not.toContain('top-secret');
+  });
+
   it('gives the user an actionable message without exposing the cause', () => {
     const failure = createSanitizedFailure(
       new Error('password=do-not-disclose'),
