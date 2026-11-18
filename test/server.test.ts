@@ -341,7 +341,7 @@ describe('server baseline', () => {
     const createCategory = vi.fn().mockResolvedValue({ id: 'actual-category-1', name: 'Groceries' });
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory, createCategoryGroup: vi.fn(), deleteCategory: vi.fn(), updateCategory: vi.fn() }),
+      categoryCreation: new CategoryCreation({ createCategory, createCategoryGroup: vi.fn(), deleteCategory: vi.fn(), updateCategory: vi.fn(), updateCategoryGroup: vi.fn() }),
     });
 
     const unconfirmed = await app.inject({
@@ -364,7 +364,7 @@ describe('server baseline', () => {
     const createCategoryGroup = vi.fn().mockResolvedValue({ id: 'actual-group-1', name: 'Everyday' });
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup, deleteCategory: vi.fn(), updateCategory: vi.fn() }),
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup, deleteCategory: vi.fn(), updateCategory: vi.fn(), updateCategoryGroup: vi.fn() }),
     });
 
     const unconfirmed = await app.inject({
@@ -388,7 +388,7 @@ describe('server baseline', () => {
     const deleteCategory = vi.fn();
     const app = buildServer({
       database: { checkHealth: () => undefined },
-      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup: vi.fn(), deleteCategory, updateCategory }),
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup: vi.fn(), deleteCategory, updateCategory, updateCategoryGroup: vi.fn() }),
     });
 
     const invalidUpdate = await app.inject({
@@ -416,6 +416,49 @@ describe('server baseline', () => {
     expect(deleted.statusCode).toBe(204);
     expect(deleteCategory).toHaveBeenCalledWith('category-1');
     await app.close();
+  });
+
+  it('renames groups, moves categories, and merges a removed category into local transactions and rules', async () => {
+    const { app: statementApp, database, rules, transaction } = await createStatementServer();
+    await statementApp.close();
+    await database.db.updateTable('statement_transactions').set({ actual_category_id: 'old' }).where('id', '=', transaction.id).execute();
+    const rule = await rules.create({ categoryId: 'old', descriptionContains: 'synthetic' });
+    const otherRule = await rules.create({ categoryId: 'kept', descriptionContains: 'other' });
+    const catalog = new CategoryCatalog(database.db);
+    const updateCategory = vi.fn().mockResolvedValue({ id: 'old', name: 'Old' });
+    const updateCategoryGroup = vi.fn().mockResolvedValue({ id: 'group', name: 'Renamed' });
+    const deleteCategory = vi.fn();
+    const app = buildServer({
+      database,
+      categoryCatalog: catalog,
+      categorySource: { getCategoriesGrouped: async () => [{ id: 'group', name: 'Renamed', categories: [{ id: 'new', name: 'New' }, { id: 'kept', name: 'Kept' }] }] },
+      categoryCreation: new CategoryCreation({ createCategory: vi.fn(), createCategoryGroup: vi.fn(), deleteCategory, updateCategory, updateCategoryGroup }),
+    });
+    try {
+      const renamedGroup = await app.inject({ method: 'PATCH', url: '/api/category-groups/group', payload: { name: 'Renamed' } });
+      expect(renamedGroup.statusCode).toBe(200);
+      expect(updateCategoryGroup).toHaveBeenCalledWith('group', 'Renamed');
+      expect((await app.inject({ method: 'PATCH', url: '/api/category-groups/group', payload: { name: ' ' } })).statusCode).toBe(400);
+
+      const moved = await app.inject({ method: 'PATCH', url: '/api/categories/old', payload: { groupId: 'other-group', name: 'Old' } });
+      expect(moved.statusCode).toBe(200);
+      expect(updateCategory).toHaveBeenCalledWith('old', 'Old', 'other-group');
+
+      const sameTarget = await app.inject({ method: 'DELETE', url: '/api/categories/old', payload: { confirmed: true, transferCategoryId: 'old' } });
+      expect(sameTarget.statusCode).toBe(400);
+      expect(deleteCategory).not.toHaveBeenCalled();
+
+      const merged = await app.inject({ method: 'DELETE', url: '/api/categories/old', payload: { confirmed: true, transferCategoryId: 'new' } });
+      expect(merged.statusCode).toBe(204);
+      expect(deleteCategory).toHaveBeenCalledWith('old', 'new');
+      const stored = await database.db.selectFrom('statement_transactions').select('actual_category_id').where('id', '=', transaction.id).executeTakeFirstOrThrow();
+      expect(stored.actual_category_id).toBe('new');
+      const storedRules = await rules.list();
+      expect(storedRules.find((item) => item.id === rule.id)?.categoryId).toBe('new');
+      expect(storedRules.find((item) => item.id === otherRule.id)?.categoryId).toBe('kept');
+    } finally {
+      await app.close();
+    }
   });
 
   it('queues a direct PDF upload and returns existing statements for duplicate content', async () => {

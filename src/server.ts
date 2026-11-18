@@ -342,11 +342,27 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
     app.delete<{ Body: unknown; Params: { categoryId: string } }>('/api/categories/:categoryId', async (request, reply) => {
       try {
-        await categoryCreation.delete(validateCategoryDeletion(request.params.categoryId, request.body));
+        const deletion = validateCategoryDeletion(request.params.categoryId, request.body);
+        await categoryCreation.delete(deletion);
+        if (options.categoryCatalog && deletion.transferCategoryId !== undefined) {
+          await options.categoryCatalog.reassign(deletion.id.trim(), deletion.transferCategoryId.trim());
+        }
         if (options.categoryCatalog && options.categorySource) {
           await options.categoryCatalog.refresh(options.categorySource);
         }
         return reply.code(204).send();
+      } catch (error) {
+        return categoryManagementError(reply, error);
+      }
+    });
+
+    app.patch<{ Body: unknown; Params: { groupId: string } }>('/api/category-groups/:groupId', async (request, reply) => {
+      try {
+        const group = await categoryCreation.updateGroup(validateCategoryGroupUpdate(request.params.groupId, request.body));
+        if (options.categoryCatalog && options.categorySource) {
+          await options.categoryCatalog.refresh(options.categorySource);
+        }
+        return group;
       } catch (error) {
         return categoryManagementError(reply, error);
       }
@@ -825,27 +841,45 @@ function validateCategoryCreation(value: unknown): { confirmed: boolean; groupId
   return { confirmed: value.confirmed, groupId: value.groupId, name: value.name };
 }
 
-function validateCategoryUpdate(categoryId: string, value: unknown): { id: string; name: string } {
+function validateCategoryUpdate(categoryId: string, value: unknown): { groupId?: string; id: string; name: string } {
   if (!isRecord(value) || typeof value.name !== 'string') {
     throw new CategoryCreationError('INVALID_CATEGORY_NAME');
   }
-  return { id: categoryId, name: value.name };
+  if (value.groupId === undefined) return { id: categoryId, name: value.name };
+  if (typeof value.groupId !== 'string') {
+    throw new CategoryCreationError('INVALID_CATEGORY_GROUP');
+  }
+  return { groupId: value.groupId, id: categoryId, name: value.name };
 }
 
-function validateCategoryDeletion(categoryId: string, value: unknown): { confirmed: boolean; id: string } {
+function validateCategoryGroupUpdate(groupId: string, value: unknown): { id: string; name: string } {
+  if (!isRecord(value) || typeof value.name !== 'string') {
+    throw new CategoryCreationError('INVALID_CATEGORY_GROUP_NAME');
+  }
+  return { id: groupId, name: value.name };
+}
+
+function validateCategoryDeletion(categoryId: string, value: unknown): { confirmed: boolean; id: string; transferCategoryId?: string } {
   if (!isRecord(value) || typeof value.confirmed !== 'boolean') {
     throw new CategoryCreationError('CATEGORY_DELETION_NOT_CONFIRMED');
   }
-  return { confirmed: value.confirmed, id: categoryId };
+  if (value.transferCategoryId === undefined) return { confirmed: value.confirmed, id: categoryId };
+  if (typeof value.transferCategoryId !== 'string') {
+    throw new CategoryCreationError('INVALID_TRANSFER_CATEGORY');
+  }
+  return { confirmed: value.confirmed, id: categoryId, transferCategoryId: value.transferCategoryId };
 }
 
 function categoryManagementError(reply: { code(statusCode: number): { send(payload: { message: string }): unknown } }, error: unknown) {
   if (!(error instanceof CategoryCreationError)) throw error;
-  const message = error.code === 'CATEGORY_DELETION_NOT_CONFIRMED'
-    ? 'Category removal requires confirmation.'
-    : error.code === 'INVALID_CATEGORY_ID'
-      ? 'Select an existing category.'
-      : 'Provide a category name.';
+  const messages: Partial<Record<CategoryCreationError['code'], string>> = {
+    CATEGORY_DELETION_NOT_CONFIRMED: 'Category removal requires confirmation.',
+    INVALID_CATEGORY_ID: 'Select an existing category.',
+    INVALID_CATEGORY_GROUP: 'Select an existing category group.',
+    INVALID_CATEGORY_GROUP_NAME: 'Provide a category group name.',
+    INVALID_TRANSFER_CATEGORY: 'Select a different category to receive the transactions.',
+  };
+  const message = messages[error.code] ?? 'Provide a category name.';
   return reply.code(400).send({ message });
 }
 
