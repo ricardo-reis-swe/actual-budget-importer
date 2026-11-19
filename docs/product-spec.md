@@ -137,7 +137,8 @@ people can use it.
 
 ## Statement support
 
-- Support ActivoBank, WiZink, and POSB/DBS PDF statements.
+- Support ActivoBank, WiZink, POSB/DBS, and Millennium meal card
+  PDF statements.
 - Use the owner's existing extraction script and bank presets
   as the starting point for statement parsing.
 - Changes to extraction behavior require the owner's approval.

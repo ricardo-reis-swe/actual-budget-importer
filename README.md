@@ -4,8 +4,8 @@
 
 # Actual Budget Importer
 
-Actual Budget Importer turns ActivoBank, WiZink, and POSB/DBS PDF statements into
-reviewable transactions before you publish them to Actual Budget. Statements
+Actual Budget Importer turns ActivoBank, WiZink, POSB/DBS, and Millennium meal card
+PDF statements into reviewable transactions before you publish them to Actual Budget. Statements
 can be uploaded directly or received from Paperless-ngx. Categories are loaded
 from Actual Budget, and new category groups and categories can be created from
 the importer.
@@ -20,6 +20,12 @@ correspondent mapping.
 It extracts the **DETALHE DOS MOVIMENTOS** table using the movement date,
 with debits as negative amounts and credits as positive amounts. Use
 **ActivoBank** for account statements.
+
+For Millennium meal card statements (**Extrato M REFEICAO**), enable
+**Millennium Meal Card** in parser settings. It reads card purchases from
+**MOVIMENTOS** and top-ups from **Outros movimentos** in statement order,
+using the movement date. Amounts ending in `-` are negative. Parsing fails if
+the rows do not add up to the statement's credit and debit totals.
 
 > [!IMPORTANT]
 > This app is designed for one user on a trusted internal network. Do not

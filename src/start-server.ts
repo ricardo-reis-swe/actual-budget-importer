@@ -21,6 +21,7 @@ import { wizinkOldFormatParser } from './parsers/wizink-old-format-parser.js';
 import { ParserSettings } from './parsers/parser-settings.js';
 import { DisplaySettings } from './settings/display-settings.js';
 import { posbDbsParser } from './parsers/posb-dbs-parser.js';
+import { millenniumMealCardParser } from './parsers/millennium-meal-card-parser.js';
 
 if (existsSync('.env')) {
   process.loadEnvFile('.env');
@@ -29,7 +30,7 @@ if (existsSync('.env')) {
 const configuration = loadConfiguration();
 const database = new ApplicationDatabase(configuration.dataDirectory);
 await database.migrate(configuration.actualBudget.legacyAccountId);
-const parsers = [activoBankParser, activoBankCcParser, wizinkParser, wizinkOldFormatParser, posbDbsParser] as const;
+const parsers = [activoBankParser, activoBankCcParser, wizinkParser, wizinkOldFormatParser, posbDbsParser, millenniumMealCardParser] as const;
 const paperlessClient = configuration.paperless ? new PaperlessClient(configuration.paperless) : undefined;
 const parserSettings = new ParserSettings(database.db, parsers, paperlessClient);
 const displaySettings = new DisplaySettings(database.db);
