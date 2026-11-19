@@ -208,7 +208,38 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   if (options.statements) {
     const statements = options.statements;
 
-    app.get('/api/statements', async () => ({ statements: await statements.list() }));
+    app.get<{ Querystring: { include?: string; status?: string } }>('/api/statements', async (request, reply) => {
+      const { include } = request.query;
+      if (include !== undefined && include !== 'transactions') {
+        return reply.code(400).send({ message: 'The include parameter only supports "transactions".' });
+      }
+      const summaries = await statements.list(statusesFrom(request.query.status));
+      if (include !== 'transactions') return { statements: summaries };
+      return {
+        statements: await Promise.all(summaries.map(async (summary) => ({
+          ...summary,
+          transactions: (await statements.get(summary.id))?.transactions ?? [],
+        }))),
+      };
+    });
+
+    app.get<{ Querystring: { amountCents?: string; descriptionContains?: string; status?: string } }>(
+      '/api/transactions',
+      async (request, reply) => {
+        const { amountCents, descriptionContains } = request.query;
+        const amount = amountCents === undefined ? undefined : Number(amountCents);
+        if (amount !== undefined && (amountCents!.trim() === '' || !Number.isSafeInteger(amount))) {
+          return reply.code(400).send({ message: 'amountCents must be a signed integer.' });
+        }
+        return {
+          transactions: await statements.searchTransactions({
+            amountCents: amount,
+            descriptionContains: descriptionContains?.trim() || undefined,
+            statuses: statusesFrom(request.query.status),
+          }),
+        };
+      },
+    );
 
     app.get<{ Params: { statementId: string } }>('/api/statements/:statementId', async (request, reply) => {
       const statement = await statements.get(parseId(request.params.statementId));
@@ -752,6 +783,11 @@ function parserSettingsError(reply: { code(statusCode: number): { send(payload: 
   return reply.code(400).send({
     message: error.code === 'INVALID_PARSER' ? 'Select an available parser.' : 'Select a valid Paperless correspondent.',
   });
+}
+
+function statusesFrom(value: string | undefined): string[] | undefined {
+  const statuses = value?.split(',').map((status) => status.trim()).filter(Boolean);
+  return statuses && statuses.length > 0 ? statuses : undefined;
 }
 
 function parseId(value: string): number {

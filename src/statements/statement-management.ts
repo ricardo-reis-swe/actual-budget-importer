@@ -35,6 +35,7 @@ export interface StatementDetail extends Omit<StatementSummary,
 
 export interface StatementTransaction {
   actualCategoryId: string | null;
+  categoryName: string | null;
   transferAccountId: string | null;
   amountCents: number;
   date: string;
@@ -46,6 +47,27 @@ export interface StatementTransaction {
   reviewedAmountCents: number | null;
   reviewedDate: string | null;
   reviewedDescription: string | null;
+}
+
+export interface TransactionSearch {
+  amountCents?: number | undefined;
+  descriptionContains?: string | undefined;
+  statuses?: readonly string[] | undefined;
+}
+
+export interface TransactionSearchResult {
+  actualCategoryId: string | null;
+  amountCents: number;
+  categoryName: string | null;
+  date: string;
+  description: string;
+  excluded: boolean;
+  id: number;
+  parserId: string | null;
+  statementId: number;
+  statementStatus: string;
+  statementTitle: string | null;
+  transferAccountId: string | null;
 }
 
 export interface ReviewUpdate {
@@ -65,8 +87,10 @@ export class StatementManagement {
     private readonly categorizationRules?: CategorizationRuleMatcher,
   ) {}
 
-  async list(): Promise<StatementSummary[]> {
-    const statements = await this.database.selectFrom('statements').selectAll().orderBy('created_at', 'desc').execute();
+  async list(statuses?: readonly string[]): Promise<StatementSummary[]> {
+    let query = this.database.selectFrom('statements').selectAll();
+    if (statuses && statuses.length > 0) query = query.where('status', 'in', [...statuses]);
+    const statements = await query.orderBy('created_at', 'desc').execute();
     const correspondentNames = new Map<number, string>();
     for (const statement of statements) {
       if (statement.paperless_correspondent_id !== null && statement.paperless_correspondent_name !== null) {
@@ -152,6 +176,7 @@ export class StatementManagement {
         transaction.reviewed_description ?? transaction.description,
         statement.parser_id,
       ) ?? null));
+    const categoryNames = await this.categoryNames();
 
     return {
       actualAccount: statement.actual_account_id === null
@@ -173,6 +198,7 @@ export class StatementManagement {
       status: statement.status,
       transactions: transactions.map((transaction, index) => ({
         actualCategoryId: transaction.actual_category_id,
+        categoryName: categoryNameOf(categoryNames, transaction.actual_category_id),
         transferAccountId: transaction.transfer_account_id,
         amountCents: transaction.amount_cents,
         date: transaction.date,
@@ -234,6 +260,7 @@ export class StatementManagement {
 
     return {
       actualCategoryId: updated.actual_category_id,
+      categoryName: categoryNameOf(await this.categoryNames(), updated.actual_category_id),
       transferAccountId: updated.transfer_account_id,
       amountCents: updated.amount_cents,
       date: updated.date,
@@ -299,6 +326,59 @@ export class StatementManagement {
     return updatedStatement ? { appliedCount: matchedTransactions.length, statement: updatedStatement } : undefined;
   }
 
+  async searchTransactions(search: TransactionSearch): Promise<TransactionSearchResult[]> {
+    let query = this.database
+      .selectFrom('statement_transactions')
+      .innerJoin('statements', 'statements.id', 'statement_transactions.statement_id')
+      .select([
+        'statement_transactions.id', 'statement_transactions.statement_id', 'statement_transactions.date',
+        'statement_transactions.description', 'statement_transactions.amount_cents',
+        'statement_transactions.reviewed_date', 'statement_transactions.reviewed_description',
+        'statement_transactions.reviewed_amount_cents', 'statement_transactions.excluded',
+        'statement_transactions.actual_category_id', 'statement_transactions.transfer_account_id',
+        'statements.status', 'statements.parser_id', 'statements.paperless_document_title', 'statements.original_filename',
+      ]);
+    if (search.statuses && search.statuses.length > 0) query = query.where('statements.status', 'in', [...search.statuses]);
+    if (search.amountCents !== undefined) {
+      const amount = search.amountCents;
+      query = query.where((eb) => eb.or([
+        eb('statement_transactions.reviewed_amount_cents', '=', amount),
+        eb.and([eb('statement_transactions.reviewed_amount_cents', 'is', null), eb('statement_transactions.amount_cents', '=', amount)]),
+      ]));
+    }
+    const rows = await query
+      .orderBy('statements.created_at', 'desc')
+      .orderBy('statement_transactions.position')
+      .execute();
+    const needle = search.descriptionContains?.toLocaleLowerCase();
+    const categoryNames = await this.categoryNames();
+    return rows
+      .filter((row) => !needle || (row.reviewed_description ?? row.description).toLocaleLowerCase().includes(needle))
+      .map((row) => ({
+        actualCategoryId: row.actual_category_id,
+        amountCents: row.reviewed_amount_cents ?? row.amount_cents,
+        categoryName: categoryNameOf(categoryNames, row.actual_category_id),
+        date: row.reviewed_date ?? row.date,
+        description: row.reviewed_description ?? row.description,
+        excluded: row.excluded === 1,
+        id: row.id,
+        parserId: row.parser_id,
+        statementId: row.statement_id,
+        statementStatus: row.status,
+        statementTitle: row.paperless_document_title ?? row.original_filename,
+        transferAccountId: row.transfer_account_id,
+      }));
+  }
+
+  private async categoryNames(): Promise<Map<string, string>> {
+    const rows = await this.database
+      .selectFrom('actual_categories')
+      .innerJoin('actual_category_groups', 'actual_category_groups.id', 'actual_categories.group_id')
+      .select(['actual_categories.id', 'actual_categories.name', 'actual_category_groups.name as groupName'])
+      .execute();
+    return new Map(rows.map((row) => [row.id, `${row.groupName} / ${row.name}`]));
+  }
+
   async delete(statementId: number): Promise<boolean> {
     const statement = await this.database
       .selectFrom('statements')
@@ -314,6 +394,10 @@ export class StatementManagement {
     await this.database.deleteFrom('statements').where('id', '=', statementId).execute();
     return true;
   }
+}
+
+function categoryNameOf(names: Map<string, string>, categoryId: string | null): string | null {
+  return categoryId === null ? null : names.get(categoryId) ?? null;
 }
 
 function sortableDate(date: string): string {

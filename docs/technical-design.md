@@ -291,6 +291,28 @@
 - Provide a health-check endpoint that reveals no credentials
   or financial data.
 
+## Read-only query endpoints
+
+- `GET /api/statements` accepts an optional `status` query parameter
+  with one or more comma-separated statuses, and returns only
+  statements in those statuses.
+- With `include=transactions`, each listed statement also contains its
+  review transactions in the same form as the statement detail. Reject
+  any other `include` value.
+- Provide `GET /api/transactions` to search transactions across
+  statements. Optional filters, combined with AND:
+  - `descriptionContains`: case-insensitive match on the reviewed
+    description when present, otherwise the extracted description.
+  - `amountCents`: exact signed integer match on the reviewed amount
+    when present, otherwise the extracted amount.
+  - `status`: comma-separated statement statuses.
+- Return each match with its statement ID, status, parser, and title,
+  and with the reviewed values applied to date, description, and
+  amount. Order results by newest statement, then statement position.
+- Return each transaction's category ID together with its cached
+  `Group / Category` name, or `null` when the category is not in the
+  cache.
+
 ## Health check
 
 - Provide `GET /api/health` without authentication.

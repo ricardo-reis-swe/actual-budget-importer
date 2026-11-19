@@ -602,6 +602,48 @@ describe('server baseline', () => {
     await database.close();
   });
 
+  it('filters statements by status, embeds transactions on request and searches transactions across statements', async () => {
+    const { app, database, statement, transaction } = await createStatementServer();
+    await new CategoryCatalog(database.db).refresh({ getCategoriesGrouped: async () => [
+      { id: 'group', name: 'Synthetic group', categories: [{ id: 'food', name: 'Food' }] },
+    ] });
+    await database.db.updateTable('statement_transactions')
+      .set({ actual_category_id: 'food', reviewed_description: 'Reviewed Café' })
+      .where('id', '=', transaction.id).execute();
+    const published = await database.db.insertInto('statements').values({
+      content_hash: 'synthetic-hash-2', original_filename: 'second.pdf', parser_id: 'wizink',
+      status: 'published', created_at: '2026-01-02T00:00:00.000Z', updated_at: '2026-01-02T00:00:00.000Z',
+    }).returning('id').executeTakeFirstOrThrow();
+    await database.db.insertInto('statement_transactions').values({
+      statement_id: published.id, position: 0, date: '01-01-2026', description: 'Other shop',
+      amount_cents: 1234, reviewed_amount_cents: -1234, excluded: 0, stable_import_id: 'synthetic-import-id-2',
+    }).execute();
+
+    const pending = (await app.inject({ method: 'GET', url: '/api/statements?status=ready%20for%20review,publish%20failed' })).json();
+    expect(pending.statements.map((item: { id: number }) => item.id)).toEqual([statement.id]);
+    expect(pending.statements[0].transactions).toBeUndefined();
+
+    const embedded = (await app.inject({ method: 'GET', url: '/api/statements?include=transactions' })).json();
+    expect(embedded.statements).toHaveLength(2);
+    expect(embedded.statements[1].transactions[0]).toMatchObject({ id: transaction.id, categoryName: 'Synthetic group / Food' });
+    expect((await app.inject({ method: 'GET', url: '/api/statements?include=rules' })).statusCode).toBe(400);
+
+    const byDescription = (await app.inject({ method: 'GET', url: '/api/transactions?descriptionContains=café' })).json();
+    expect(byDescription.transactions).toEqual([expect.objectContaining({
+      id: transaction.id, statementId: statement.id, description: 'Reviewed Café', categoryName: 'Synthetic group / Food',
+      statementStatus: 'ready for review', parserId: 'activobank', statementTitle: 'synthetic.pdf',
+    })]);
+
+    const byAmount = (await app.inject({ method: 'GET', url: '/api/transactions?amountCents=-1234' })).json();
+    expect(byAmount.transactions.map((item: { statementId: number }) => item.statementId)).toEqual([published.id, statement.id]);
+    const publishedOnly = (await app.inject({ method: 'GET', url: '/api/transactions?amountCents=-1234&status=published' })).json();
+    expect(publishedOnly.transactions).toEqual([expect.objectContaining({ statementId: published.id, amountCents: -1234 })]);
+    expect((await app.inject({ method: 'GET', url: '/api/transactions?amountCents=1.5' })).statusCode).toBe(400);
+
+    await app.close();
+    await database.close();
+  });
+
   it('reports the first rule covering each transaction and refreshes it after review edits', async () => {
     const { app, database, rules, statement, transaction } = await createStatementServer();
     const parserRule = await rules.create({ categoryId: 'groceries', descriptionContains: 'merchant', parserId: 'activobank' });
