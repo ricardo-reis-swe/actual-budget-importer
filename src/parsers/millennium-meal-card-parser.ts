@@ -3,7 +3,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { BankParser, ParsedTransaction } from './bank-parser.js';
 import type { PositionedText } from './generic-table-extractor.js';
 
-const shortDatePattern = /^\d{2}\.\d{2}$/;
+const shortDatePattern = /^\d{2}[./]\d{2}$/;
 const footerPattern = /Página \d+|millenniumbcp|Atendimento personalizado|Chamada para a rede|O custo das comunicações|Capital Social|Banco Comercial Português|Documento Processado/i;
 
 export const millenniumMealCardParser: BankParser = {
@@ -38,50 +38,49 @@ export function parseMillenniumMealCardPages(
   }));
   const allRows = pageRows.flat();
   const period = allRows.map((row) => row.text)
-    .find((text) => /Extrato de:.*\d{4}\/\d{2}\/\d{2}\s+a\s+\d{4}\/\d{2}\/\d{2}/i.test(text))
-    ?.match(/(\d{4}\/\d{2}\/\d{2})\s+a\s+(\d{4}\/\d{2}\/\d{2})/) ?? undefined;
-  const summaryIndex = allRows.findIndex((row) => row.text.includes('Saldo mês anterior'));
+    .map((text) => text.match(/Extrato de:?\s*(\d{4}\/\d{2}\/\d{2})\s+a\s+(\d{4}\/\d{2}\/\d{2})/i))
+    .find((match) => match) ?? undefined;
+  const summaryIndex = allRows.findIndex((row) => /Saldo mês anterior|Saldo à Data do Extrato Anterior/i.test(row.text));
   const summary = summaryIndex >= 0 ? allRows[summaryIndex + 1]?.chunks.map((chunk) => parseAmount(chunk.text)) : undefined;
   if (!summary || summary.length !== 4) throw new Error('Missing or invalid Millennium Meal Card statement summary.');
 
   const transactions: ParsedTransaction[] = [];
   let inSection = false;
-  let columns: { description?: number; type?: number; amount?: number } = {};
+  let columns: Partial<Record<'description' | 'descriptionEnd' | 'amount' | 'debit' | 'credit', number>> = {};
 
   for (const rows of pageRows) {
     let current: ParsedTransaction | undefined;
     for (const { chunks, text } of rows) {
-      if (text === 'MOVIMENTOS' || text === 'Outros movimentos') {
+      if (/^(?:MOVIMENTOS|Outros movimentos|DETALHE DOS MOVIMENTOS)$/i.test(text)) {
         inSection = true;
         columns = {};
         current = undefined;
         continue;
       }
-      if (!inSection) continue;
-      if (!text) continue;
+      if (!inSection || !text) continue;
       if (/Total Cartão|Saldo dos movimentos/.test(text)) {
         current = undefined;
         continue;
       }
       const header = (label: string) => chunks.find((chunk) => chunk.text.trim() === label)?.x;
-      const description = header('Descritivo');
-      const type = header('Tipo Transação');
-      const amount = header('Montante');
-      if (description !== undefined || type !== undefined || amount !== undefined || header('Movimento') !== undefined) {
-        columns = {
-          ...columns,
-          ...(description === undefined ? {} : { description }),
-          ...(type === undefined ? {} : { type }),
-          ...(amount === undefined ? {} : { amount }),
-        };
+      const found = {
+        description: header('Descritivo'),
+        descriptionEnd: header('Tipo Transação') ?? header('Rede'),
+        amount: header('Montante'),
+        debit: header('Débito'),
+        credit: header('Crédito'),
+      };
+      if (Object.values(found).some((x) => x !== undefined) || header('Movimento') !== undefined || header('Mov.') !== undefined) {
+        for (const [key, x] of Object.entries(found)) if (x !== undefined) columns[key as keyof typeof found] = x;
         current = undefined;
         continue;
       }
-      if (columns.description === undefined || columns.type === undefined || columns.amount === undefined) continue;
-      const layout = { description: columns.description, type: columns.type, amount: columns.amount };
-      const descriptionText = chunks.filter((chunk) => chunk.x >= layout.description - 5 && chunk.x < layout.type - 10)
+      const { description, descriptionEnd, amount, debit, credit } = columns;
+      const split = debit !== undefined && credit !== undefined;
+      if (description === undefined || descriptionEnd === undefined || (amount === undefined && !split)) continue;
+      const descriptionText = chunks.filter((chunk) => chunk.x >= description - 5 && chunk.x < descriptionEnd - 10)
         .map((chunk) => chunk.text.trim()).filter(Boolean).join(' ');
-      const dates = chunks.filter((chunk) => chunk.x < layout.description - 5)
+      const dates = chunks.filter((chunk) => chunk.x < description - 5)
         .flatMap((chunk) => chunk.text.trim().split(/\s+/)).filter(Boolean);
       if (dates.length > 0) {
         if (dates.length !== 2 || !dates.every((value) => shortDatePattern.test(value)) || !descriptionText) {
@@ -91,14 +90,14 @@ export function parseMillenniumMealCardPages(
         if (!normalizeDate(resolveValueDate(dates[1]!.replace('.', '/'), movementDate))) {
           throw new Error('Invalid Millennium Meal Card transaction row.');
         }
-        const amounts = chunks.filter((chunk) => chunk.x >= layout.amount - 30);
+        const amounts = chunks.filter((chunk) => chunk.x >= (split ? debit : amount!) - 30);
         if (amounts.length !== 1) throw new Error('Invalid Millennium Meal Card transaction row.');
-        current = {
-          position: transactions.length,
-          date: normalizeDate(movementDate)!,
-          description: descriptionText,
-          amountCents: parseAmount(amounts[0]!.text),
-        };
+        let amountCents = parseAmount(amounts[0]!.text);
+        if (split) {
+          if (amountCents < 0) throw new Error('Invalid Millennium Meal Card transaction amount.');
+          if (amounts[0]!.x < (debit + credit) / 2) amountCents = -amountCents;
+        }
+        current = { position: transactions.length, date: normalizeDate(movementDate)!, description: descriptionText, amountCents };
         transactions.push(current);
       } else if (current && descriptionText) {
         current = { ...current, description: `${current.description} ${descriptionText}` };
@@ -129,10 +128,13 @@ function resolveMovementDate(value: string, period: RegExpMatchArray | undefined
   if (!period || !normalizeDate(period[1]!) || !normalizeDate(period[2]!) || period[1]! > period[2]!) {
     throw new Error('Missing or invalid Millennium Meal Card statement period for transaction dates.');
   }
+  const earliest = Date.parse(period[1]!.replace(/\//g, '-')) - 62 * 86_400_000;
+  const latest = Date.parse(period[2]!.replace(/\//g, '-'));
   const candidates: string[] = [];
-  for (let year = Number(period[1]!.slice(0, 4)); year <= Number(period[2]!.slice(0, 4)); year += 1) {
+  for (let year = Number(period[1]!.slice(0, 4)) - 1; year <= Number(period[2]!.slice(0, 4)); year += 1) {
     const candidate = `${year}/${value}`;
-    if (normalizeDate(candidate) && candidate >= period[1]! && candidate <= period[2]!) candidates.push(candidate);
+    const time = Date.parse(candidate.replace(/\//g, '-'));
+    if (normalizeDate(candidate) && time >= earliest && time <= latest) candidates.push(candidate);
   }
   if (candidates.length !== 1) throw new Error('Invalid Millennium Meal Card transaction row.');
   return candidates[0]!;

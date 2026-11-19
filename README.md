@@ -22,10 +22,12 @@ with debits as negative amounts and credits as positive amounts. Use
 **ActivoBank** for account statements.
 
 For Millennium meal card statements (**Extrato M REFEICAO**), enable
-**Millennium Meal Card** in parser settings. It reads card purchases from
-**MOVIMENTOS** and top-ups from **Outros movimentos** in statement order,
-using the movement date. Amounts ending in `-` are negative. Parsing fails if
-the rows do not add up to the statement's credit and debit totals.
+**Millennium Meal Card** in parser settings. It reads both statement layouts:
+the older one with **MOVIMENTOS** and **Outros movimentos** sections and a
+single amount column (amounts ending in `-` are negative), and the newer
+**DETALHE DOS MOVIMENTOS** table with separate debit and credit columns. Rows
+keep statement order and use the movement date. Parsing fails if the rows do
+not add up to the statement's credit and debit totals.
 
 > [!IMPORTANT]
 > This app is designed for one user on a trusted internal network. Do not

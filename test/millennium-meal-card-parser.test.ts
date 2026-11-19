@@ -93,6 +93,48 @@ describe('Millennium Meal Card parser', () => {
     ]);
   });
 
+  it('accepts movement dates shortly before the statement period', () => {
+    expect(parseMillenniumMealCardPages([[...summary('0.00', '0.00', '1.00', '0.00'),
+      text('MOVIMENTOS', 60, 411), ...headers(371),
+      ...purchase(['02.28', '03.02'], 'Late-posted purchase', '1.00-', 349),
+    ]])).toEqual([{ position: 0, date: '28-02-2025', description: 'Late-posted purchase', amountCents: -100 }]);
+  });
+
+  it('parses the newer layout with separate debit and credit columns', async () => {
+    const newerHeaders = (top: number) => [
+      text('DETALHE DOS MOVIMENTOS', 60, top + 17),
+      text('Data', 60, top), text('Data', 102, top), text('Descritivo', 145, top),
+      text('Rede', 409, top), text('Débito', 467, top), text('Crédito', 526, top),
+      text('Mov.', 60, top - 19), text('Valor', 102, top - 19),
+    ];
+    const newerPages = [
+      [text('EXTRATO M REFEICAO', 57, 570),
+        text('EXTRATO DE', 60, 516), text('2025/09/01', 238, 516), text('a', 296, 516), text('2025/09/30', 305, 516),
+        text('MOEDA', 380, 516), text('EUR', 544, 516),
+        text('RESUMO DE MOVIMENTOS', 60, 408),
+        text('Saldo à Data do Extrato Anterior', 60, 392), text('Créditos', 264, 392), text('Débitos', 339, 392),
+        text('Saldo à Data do Extrato Atual', 410, 392),
+        text('10.00', 60, 372), text('50.00', 275, 372), text('25.30', 346, 372), text('34.70', 530, 372),
+        ...newerHeaders(313),
+        text('09/06', 57, 272), text('09/07', 99, 272), text('COMPRA 0000 SUPERMERCADO EXEMPLO', 142, 272),
+        text('MB', 413, 272), text('3.49', 480, 272),
+        text('CONT', 142, 260),
+        text('09/08', 57, 244), text('09/08', 99, 244), text('COMPRA 0000 MERCEARIA', 142, 244),
+        text('CONT', 366, 244), text('MB', 413, 244), text('21.81', 474, 244),
+        text('(Documento Processado por Computador)', 57, 85), text('Página 1 / 2', 519, 85)],
+      [...newerHeaders(722),
+        text('09/25', 57, 653), text('09/25', 99, 653), text('TRF DE PAG.ENT:00000 REF:000000000', 142, 653),
+        text('50.00', 530, 653)],
+    ];
+    const newerExpected = [
+      { position: 0, date: '06-09-2025', description: 'COMPRA 0000 SUPERMERCADO EXEMPLO CONT', amountCents: -349 },
+      { position: 1, date: '08-09-2025', description: 'COMPRA 0000 MERCEARIA CONT', amountCents: -2181 },
+      { position: 2, date: '25-09-2025', description: 'TRF DE PAG.ENT:00000 REF:000000000', amountCents: 5000 },
+    ];
+    expect(parseMillenniumMealCardPages(newerPages)).toEqual(newerExpected);
+    expect(await millenniumMealCardParser.parse(syntheticPdf(newerPages))).toEqual(newerExpected);
+  });
+
   it.each(['1,23-', '1.234', '-1.23', 'unknown'])('fails rather than silently losing an invalid amount: %s', (amount) => {
     expect(() => parseMillenniumMealCardPages([[...summary('0.00', '0.00', '1.23', '0.00'),
       text('MOVIMENTOS', 60, 411), ...headers(371), ...purchase(['03.02', '03.02'], 'Synthetic purchase', amount, 349),
