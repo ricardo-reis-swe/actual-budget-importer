@@ -9,6 +9,7 @@ import {
   CategorizationRules,
 } from '../src/rules/categorization-rules.js';
 import { DirectUploadProcessor } from '../src/processing/direct-upload.js';
+import { StatementManagement } from '../src/statements/statement-management.js';
 import { ApplicationDatabase } from '../src/storage/database.js';
 
 async function createRules(): Promise<{ database: ApplicationDatabase; rules: CategorizationRules }> {
@@ -100,6 +101,49 @@ describe('categorization rules', () => {
 
     expect(transaction.actual_category_id).toBe('coffee');
     expect(transaction.excluded).toBe(1);
+    await database.close();
+  });
+
+  it('stores a transfer account as a rule effect on its own or with other effects', async () => {
+    const { database, rules } = await createRules();
+    const transferOnly = await rules.create({ descriptionContains: 'card payment', transferAccountId: ' card-account ' });
+    const updated = await rules.update(transferOnly.id, { categoryId: 'fees', descriptionContains: 'card payment', transferAccountId: 'other-card' });
+
+    expect(transferOnly).toMatchObject({ categoryId: null, excluded: null, transferAccountId: 'card-account' });
+    expect(updated).toMatchObject({ categoryId: 'fees', transferAccountId: 'other-card' });
+    expect(await rules.match('Monthly CARD PAYMENT')).toMatchObject({ transferAccountId: 'other-card' });
+    await expect(rules.create({ descriptionContains: 'blank', transferAccountId: '  ' }))
+      .rejects.toEqual(new CategorizationRuleError('INVALID_TRANSFER_ACCOUNT'));
+    await database.close();
+  });
+
+  it('marks matching rows as transfers on extraction and when applying rules, without replacing a chosen account', async () => {
+    const { database, rules } = await createRules();
+    await rules.create({ descriptionContains: 'card payment', transferAccountId: 'card-account' });
+    const processor = new DirectUploadProcessor(
+      database.db,
+      [{ countryCode: 'PT', countryName: 'Portugal', id: 'synthetic', name: 'Synthetic', parse: async () => [
+        { position: 0, date: '01-01-2026', description: 'Card payment', amountCents: -10000 },
+        { position: 1, date: '02-01-2026', description: 'Card payment again', amountCents: -2000 },
+        { position: 2, date: '03-01-2026', description: 'Bakery', amountCents: -300 },
+      ] }],
+      undefined,
+      undefined,
+      rules,
+    );
+
+    const uploaded = await processor.upload({ filename: 'synthetic.pdf', parserId: 'synthetic', pdf: Buffer.from('%PDF-synthetic-transfer') });
+    await new Promise((resolve) => setImmediate(resolve));
+    const transfers = async () => (await database.db.selectFrom('statement_transactions').select(['position', 'transfer_account_id'])
+      .where('statement_id', '=', uploaded.id).orderBy('position').execute()).map((row) => row.transfer_account_id);
+    expect(await transfers()).toEqual(['card-account', 'card-account', null]);
+
+    await database.db.updateTable('statement_transactions').set({ transfer_account_id: null }).where('statement_id', '=', uploaded.id).where('position', '=', 0).execute();
+    await database.db.updateTable('statement_transactions').set({ transfer_account_id: 'savings' }).where('statement_id', '=', uploaded.id).where('position', '=', 1).execute();
+    const applied = await new StatementManagement(database.db, undefined, undefined, rules).applyRules(uploaded.id, rules);
+
+    expect(applied?.appliedCount).toBe(1);
+    expect(await transfers()).toEqual(['card-account', 'savings', null]);
     await database.close();
   });
 });

@@ -933,17 +933,21 @@ function validateCategoryGroupCreation(value: unknown): { confirmed: boolean; na
   return { confirmed: value.confirmed, name: value.name };
 }
 
-function validateCategorizationRule(value: unknown): { categoryId: string | null; descriptionContains: string; excluded: boolean | null; parserId: string | null } {
+function validateCategorizationRule(value: unknown): { categoryId: string | null; descriptionContains: string; excluded: boolean | null; parserId: string | null; transferAccountId: string | null } {
   if (!isRecord(value) || ('categoryId' in value && value.categoryId !== null && typeof value.categoryId !== 'string') || typeof value.descriptionContains !== 'string'
     || ('excluded' in value && value.excluded !== null && typeof value.excluded !== 'boolean')
     || ('parserId' in value && value.parserId !== null && typeof value.parserId !== 'string')) {
     throw new CategorizationRuleError('INVALID_MATCH_TEXT');
+  }
+  if ('transferAccountId' in value && value.transferAccountId !== null && typeof value.transferAccountId !== 'string') {
+    throw new CategorizationRuleError('INVALID_TRANSFER_ACCOUNT');
   }
   return {
     categoryId: value.categoryId as string | null | undefined ?? null,
     descriptionContains: value.descriptionContains,
     excluded: value.excluded as boolean | null | undefined ?? null,
     parserId: value.parserId as string | null ?? null,
+    transferAccountId: value.transferAccountId as string | null | undefined ?? null,
   };
 }
 
@@ -963,7 +967,9 @@ function categorizationRuleError(reply: { code(statusCode: number): { send(paylo
       : error.code === 'INVALID_INCLUSION_ACTION'
         ? 'Select whether matching transactions should be included, excluded, or left unchanged.'
         : error.code === 'INVALID_RULE_ACTION'
-          ? 'Select a category or an inclusion action.'
+          ? 'Select a category, an inclusion action, or a transfer account.'
+      : error.code === 'INVALID_TRANSFER_ACCOUNT'
+        ? 'Select a valid transfer account.'
       : error.code === 'INVALID_RULE_ORDER'
         ? 'Provide every saved rule once in the requested order.'
         : 'Provide matching text that contains at least one non-whitespace character.';

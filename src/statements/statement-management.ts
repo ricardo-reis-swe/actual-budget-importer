@@ -291,12 +291,13 @@ export class StatementManagement {
 
     const transactions = await this.database
       .selectFrom('statement_transactions')
-      .select(['actual_category_id', 'description', 'excluded', 'id', 'reviewed_description'])
+      .select(['actual_category_id', 'description', 'excluded', 'id', 'reviewed_description', 'transfer_account_id'])
       .where('statement_id', '=', statementId)
       .execute();
     const matches = await Promise.all(transactions.map(async (item) => ({
       currentCategoryId: item.actual_category_id,
       currentExcluded: item.excluded === 1,
+      currentTransferAccountId: item.transfer_account_id,
       id: item.id,
       rule: await rules.match(item.reviewed_description ?? item.description, statement.parser_id),
     })));
@@ -304,13 +305,15 @@ export class StatementManagement {
       ...item,
       categoryId: item.currentCategoryId === null ? item.rule?.categoryId ?? null : item.currentCategoryId,
       excluded: item.rule?.excluded ?? item.currentExcluded,
+      transferAccountId: item.currentTransferAccountId ?? item.rule?.transferAccountId ?? null,
     })).filter((item) => item.rule !== null
-      && (item.categoryId !== item.currentCategoryId || item.excluded !== item.currentExcluded));
+      && (item.categoryId !== item.currentCategoryId || item.excluded !== item.currentExcluded
+        || item.transferAccountId !== item.currentTransferAccountId));
     let applied = false;
     await this.database.transaction().execute(async (transaction) => {
       for (const item of matchedTransactions) {
         await transaction.updateTable('statement_transactions')
-          .set({ actual_category_id: item.categoryId, excluded: item.excluded ? 1 : 0 })
+          .set({ actual_category_id: item.categoryId, excluded: item.excluded ? 1 : 0, transfer_account_id: item.transferAccountId })
           .where('id', '=', item.id)
           .execute();
         applied = true;

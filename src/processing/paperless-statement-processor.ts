@@ -112,7 +112,7 @@ export class PaperlessStatementProcessor {
       const contentHash = createHash('sha256').update(pdf).digest('hex');
       const categorizedRows = await Promise.all(rows.map(async (row) => {
         const rule = await this.categorizationRules?.match(row.description, parser.id);
-        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false };
+        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false, transferAccountId: rule?.transferAccountId ?? null };
       }));
       await this.database.transaction().execute(async (transaction) => {
         const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
@@ -121,7 +121,7 @@ export class PaperlessStatementProcessor {
         await transaction.deleteFrom('statement_transactions').where('statement_id', '=', statementId).execute();
         await transaction.insertInto('statement_transactions').values(categorizedRows.map((row) => ({
           statement_id: statementId, position: row.position, date: row.date, description: row.description,
-          amount_cents: row.amountCents, actual_category_id: row.categoryId, excluded: row.excluded ? 1 : 0, stable_import_id: randomUUID(),
+          amount_cents: row.amountCents, actual_category_id: row.categoryId, excluded: row.excluded ? 1 : 0, stable_import_id: randomUUID(), transfer_account_id: row.transferAccountId,
         }))).execute();
         await transaction.updateTable('statements').set({ content_hash: contentHash, parser_id: parser.id,
           status: 'ready for review', error_message: null, diagnostic_id: null, updated_at: this.now().toISOString() })

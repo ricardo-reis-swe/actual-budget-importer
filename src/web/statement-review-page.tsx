@@ -27,6 +27,7 @@ interface MatchingRule {
   excluded: boolean | null;
   id: number;
   parserId: string | null;
+  transferAccountId: string | null;
 }
 
 interface StatementDetail {
@@ -110,6 +111,7 @@ function matchingRuleLabel(rule: MatchingRule, groups: CategoryGroup[]): string 
   }
   if (rule.excluded === true) effects.push('exclude transaction');
   if (rule.excluded === false) effects.push('include transaction');
+  if (rule.transferAccountId) effects.push('mark as transfer');
   return `Covered by rule: description contains “${rule.descriptionContains}” → ${effects.join(', ')}`;
 }
 

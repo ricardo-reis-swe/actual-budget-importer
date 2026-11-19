@@ -28,6 +28,7 @@ export interface DatabaseSchema {
     inclusion_action: string | null;
     parser_id: string | null;
     position: number;
+    transfer_account_id: Generated<string | null>;
   };
   paperless_parser_mappings: {
     correspondent_id: number;
@@ -254,6 +255,13 @@ const migrations: Migration[] = [
     name: '009_transaction_transfers',
     async up(database) {
       await database.schema.alterTable('statement_transactions')
+        .addColumn('transfer_account_id', 'text').execute();
+    },
+  },
+  {
+    name: '010_rule_transfers',
+    async up(database) {
+      await database.schema.alterTable('categorization_rules')
         .addColumn('transfer_account_id', 'text').execute();
     },
   },

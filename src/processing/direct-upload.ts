@@ -160,7 +160,7 @@ export class DirectUploadProcessor {
       ]);
       const categorizedTransactions = await Promise.all(transactions.map(async (row) => {
         const rule = await this.categorizationRules?.match(row.description, parser.id);
-        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false };
+        return { ...row, categoryId: rule?.categoryId ?? null, excluded: rule?.excluded ?? false, transferAccountId: rule?.transferAccountId ?? null };
       }));
       await this.database.transaction().execute(async (transaction) => {
         const current = await transaction.selectFrom('statements').select(['parser_id', 'status'])
@@ -176,6 +176,7 @@ export class DirectUploadProcessor {
             amount_cents: row.amountCents,
             excluded: row.excluded ? 1 : 0,
             stable_import_id: randomUUID(),
+            transfer_account_id: row.transferAccountId,
           }))).execute();
         }
         await transaction.updateTable('statements')

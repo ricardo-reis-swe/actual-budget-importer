@@ -247,9 +247,9 @@
 - Store the database in a configurable persistent data
   directory outside the application source.
 - Run only one application instance against a database file.
-- Store category and inclusion effects independently on each
-  saved rule. Preserve existing category-only rules when the
-  schema is migrated.
+- Store category, inclusion, and transfer effects independently on
+  each saved rule. Preserve existing rules when the schema is
+  migrated.
 - Include the first matching saved rule with each transaction returned for
   statement review. Determine it from the reviewed description when present,
   otherwise the extracted description, together with the statement parser.
@@ -354,6 +354,10 @@
 
 - Persist a nullable `transfer_account_id` on each statement transaction.
   Include `transferAccountId` in review responses and review PATCH requests.
+- Persist a nullable `transfer_account_id` on each categorization rule and
+  accept `transferAccountId` in rule requests. Store the account ID without
+  contacting Actual Budget; publish validation checks it like a manual
+  transfer.
 - Resolve transfer targets through Actual Budget's existing payees whose
   `transfer_acct` matches the selected account ID. Send that payee ID during
   import instead of a payee name, preserving the extracted imported payee.

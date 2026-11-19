@@ -10,6 +10,7 @@ export interface CategorizationRule {
   id: number;
   parserId: string | null;
   position: number;
+  transferAccountId: string | null;
 }
 
 export interface CategorizationRuleMatcher {
@@ -23,10 +24,11 @@ export interface RuleMatch {
   excluded: boolean | null;
   id: number;
   parserId: string | null;
+  transferAccountId: string | null;
 }
 
 export class CategorizationRuleError extends Error {
-  constructor(readonly code: 'INVALID_CATEGORY' | 'INVALID_INCLUSION_ACTION' | 'INVALID_MATCH_TEXT' | 'INVALID_RULE_ACTION' | 'INVALID_RULE_ORDER' | 'RULE_NOT_FOUND') {
+  constructor(readonly code: 'INVALID_CATEGORY' | 'INVALID_INCLUSION_ACTION' | 'INVALID_MATCH_TEXT' | 'INVALID_RULE_ACTION' | 'INVALID_RULE_ORDER' | 'INVALID_TRANSFER_ACCOUNT' | 'RULE_NOT_FOUND') {
     super(code);
   }
 }
@@ -67,6 +69,7 @@ export class CategorizationRules implements CategorizationRuleMatcher {
         inclusion_action: action.inclusionAction,
         parser_id: normalizeParser(input.parserId),
         position: (lastRule?.position ?? -1) + 1,
+        transfer_account_id: action.transferAccountId,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -84,6 +87,7 @@ export class CategorizationRules implements CategorizationRuleMatcher {
         description_contains: descriptionContains,
         inclusion_action: action.inclusionAction,
         parser_id: normalizeParser(input.parserId),
+        transfer_account_id: action.transferAccountId,
       })
       .where('id', '=', ruleId)
       .returningAll()
@@ -138,6 +142,7 @@ function findMatchingRule(
         excluded: rule.excluded,
         id: rule.id,
         parserId: rule.parserId,
+        transferAccountId: rule.transferAccountId,
       };
     }
   }
@@ -154,9 +159,10 @@ interface RuleInput {
   descriptionContains: string;
   excluded?: boolean | null;
   parserId?: string | null;
+  transferAccountId?: string | null;
 }
 
-function requireAction(input: RuleInput): { categoryId: string | null; inclusionAction: string | null } {
+function requireAction(input: RuleInput): { categoryId: string | null; inclusionAction: string | null; transferAccountId: string | null } {
   if (input.excluded !== undefined && input.excluded !== null && typeof input.excluded !== 'boolean') {
     throw new CategorizationRuleError('INVALID_INCLUSION_ACTION');
   }
@@ -166,8 +172,15 @@ function requireAction(input: RuleInput): { categoryId: string | null; inclusion
   }
   const categoryId = normalizedCategory || null;
   const inclusionAction = input.excluded === true ? 'exclude' : input.excluded === false ? 'include' : null;
-  if (categoryId === null && inclusionAction === null) throw new CategorizationRuleError('INVALID_RULE_ACTION');
-  return { categoryId, inclusionAction };
+  const normalizedTransfer = input.transferAccountId?.trim();
+  if (input.transferAccountId !== undefined && input.transferAccountId !== null && !normalizedTransfer) {
+    throw new CategorizationRuleError('INVALID_TRANSFER_ACCOUNT');
+  }
+  const transferAccountId = normalizedTransfer || null;
+  if (categoryId === null && inclusionAction === null && transferAccountId === null) {
+    throw new CategorizationRuleError('INVALID_RULE_ACTION');
+  }
+  return { categoryId, inclusionAction, transferAccountId };
 }
 
 function requireMatchText(descriptionContains: string): string {
@@ -185,6 +198,7 @@ function toRule(rule: {
   inclusion_action: string | null;
   parser_id: string | null;
   position: number;
+  transfer_account_id: string | null;
 }): CategorizationRule {
   return {
     categoryId: rule.category_enabled === 1 ? rule.category_id : null,
@@ -194,5 +208,6 @@ function toRule(rule: {
     id: rule.id,
     parserId: rule.parser_id,
     position: rule.position,
+    transferAccountId: rule.transfer_account_id,
   };
 }

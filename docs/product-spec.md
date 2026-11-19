@@ -85,7 +85,8 @@ people can use it.
 - Users can explicitly create reusable rules such as:
   "If the description contains X, assign category Y."
 - A rule can assign a category, mark matching transactions as
-  included or excluded, or do both.
+  included or excluded, mark them as a transfer to/from another
+  Actual Budget account, or any combination of these.
 - Assigning a category does not automatically create a rule.
 - Saved rules populate categories in new statements.
   Users can change those categories during review.
@@ -114,7 +115,8 @@ people can use it.
 - Allow transfer selections to be edited after publication using Publish
   changes, updating the existing linked transactions.
 - Keep transfer assignments local and available during integration outages.
-  Saved categorization rules continue to assign categories and inclusion only.
+- Saved rules can mark matching transactions as transfers to a chosen account.
+  Rule-assigned transfers go through the same publish validation as manual ones.
 
 ## Publishing to Actual Budget
 
@@ -373,7 +375,8 @@ people can use it.
 - Require rule matching text to contain at least one
   non-whitespace character.
 - Require a rule to assign a valid Actual Budget category, set
-  whether matching transactions are included, or both.
+  whether matching transactions are included, select a transfer
+  account, or any combination of these.
 - If a saved rule's category has been deleted, flag the rule
   for attention and skip it during automatic categorization.
 - Continue checking subsequent rules in their saved order.
@@ -386,8 +389,8 @@ people can use it.
   transactions in the current statement.
 - Apply it to the current statement only when the user selects
   that option.
-- Do not overwrite categories the user already assigned to
-  other transactions.
+- Do not overwrite categories or transfer accounts the user
+  already assigned to other transactions.
 - Applying rules may change inclusion when a matching rule has
   an explicit include or exclude action.
 - Let the user apply the saved rules to the current unpublished
@@ -454,7 +457,7 @@ people can use it.
 - Provide a page where users can view all saved rules.
 - Let users create, edit, delete, and reorder rules.
 - Show each rule's description text, category action, inclusion
-  action, and position in the matching order.
+  action, transfer action, and position in the matching order.
 - Apply rules to statements from every bank by default.
 - Let the user optionally scope a rule to one parser.
 - Apply a parser-scoped rule only when the statement used that
