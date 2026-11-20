@@ -95,6 +95,49 @@ describe('Actual Budget client lifecycle', () => {
     expect(actual.init).toHaveBeenCalledOnce();
   });
 
+  it('syncs once before and once after a session instead of around each operation', async () => {
+    await client.runSession(async () => {
+      await client.getAccounts();
+      await client.getAccounts();
+      await client.getAccounts();
+    });
+
+    expect(actual.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('queues operations started outside a running session', async () => {
+    let finishSession!: () => void;
+    const session = client.runSession(() => new Promise<void>((resolve) => { finishSession = resolve; }));
+    const outside = client.getAccounts();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(actual.getAccounts).not.toHaveBeenCalled();
+    finishSession();
+    await Promise.all([session, outside]);
+    expect(actual.getAccounts).toHaveBeenCalledOnce();
+    expect(actual.sync).toHaveBeenCalledTimes(4);
+  });
+
+  it('stops signing in for a minute after Actual Budget limits requests', async () => {
+    let now = 1_000_000;
+    client = new ActualBudgetClient(loadConfiguration({
+      ACTUAL_SERVER_URL: 'https://actual.example.test',
+      ACTUAL_PASSWORD: 'synthetic',
+      ACTUAL_BUDGET_ID: 'synthetic',
+      APP_DATA_DIRECTORY: directory,
+    }), () => now);
+    vi.mocked(actual.init).mockRejectedValueOnce(new Error('Authentication failed: Too many requests, please try again later.'));
+
+    await expect(client.getAccounts()).rejects.toThrow('Too many requests');
+    now += 30_000;
+    await expect(client.getAccounts()).rejects.toThrow('Try again in 30 seconds');
+    expect(actual.init).toHaveBeenCalledOnce();
+
+    now += 30_000;
+    await expect(client.getAccounts()).resolves.toHaveLength(1);
+    expect(actual.init).toHaveBeenCalledTimes(2);
+  });
+
   it('serializes operations while recovering from a failure', async () => {
     await client.getAccounts();
     vi.mocked(actual.sync).mockRejectedValueOnce(syncFailure());

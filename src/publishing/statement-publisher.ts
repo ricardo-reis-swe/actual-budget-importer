@@ -25,6 +25,7 @@ export interface ActualBudgetPublisher {
   resolveTransferPayee?(accountId: string, sourceAccountId: string): Promise<{ payeeId: string; categoryAllowed: boolean }>;
   verifyTransfer?(id: string, accountId: string, targetAccountId: string, values: Omit<ActualTransaction, 'id'>, transferCategoryId: string | null): Promise<void>;
   synchronize(): Promise<void>;
+  runSession?<T>(operation: () => Promise<T>): Promise<T>;
   updateTransaction(id: string, transaction: Omit<ActualTransaction, 'id' | 'imported_id'>): Promise<void>;
 }
 
@@ -60,89 +61,92 @@ export class StatementPublisher {
         .execute();
       const includedTransactions = transactions.filter((transaction) => transaction.excluded === 0);
 
-      if (includedTransactions.length > 0) {
-        const publicationRecords = await this.database
-          .selectFrom('publication_records')
-          .select(['statement_transaction_id', 'actual_transaction_id'])
-          .where('statement_transaction_id', 'in', includedTransactions.map((transaction) => transaction.id))
-          .execute();
-        const recordsByTransactionId = new Map(publicationRecords.map((record) => [record.statement_transaction_id, record]));
-        const reviewedTransactions = await Promise.all(includedTransactions.map(async (transaction) => {
-          const transfer = transaction.transfer_account_id
-            ? await this.actualBudget.resolveTransferPayee?.(transaction.transfer_account_id, accountId)
-            : null;
-          if (transaction.transfer_account_id && !transfer) throw new Error('Actual Budget transfers are unavailable.');
-          return {
-            transaction,
-            amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
-            category: transfer && !transfer.categoryAllowed ? null : transaction.actual_category_id,
-            cleared: true,
-            date: actualDate(transaction.reviewed_date ?? transaction.date),
-            imported_payee: transaction.description,
-            notes: '',
-            ...(transfer ? { payee: transfer.payeeId } : {}),
-            payee_name: transaction.reviewed_description ?? transaction.description,
-          };
-        }));
-        const pending = reviewedTransactions
-          .filter(({ transaction }) => !recordsByTransactionId.get(transaction.id)?.actual_transaction_id)
-          .map(({ transaction, payee_name, ...values }) => ({
-            ...values,
-            ...(values.payee ? {} : { payee_name }),
-            imported_id: transaction.stable_import_id,
-          }));
-        if (pending.length > 0) await this.actualBudget.importTransactions(accountId, pending);
-
-        const pendingImportIds = new Set(pending.map((transaction) => transaction.imported_id));
-        const pendingReviewed = reviewedTransactions.filter(({ transaction }) => pendingImportIds.has(transaction.stable_import_id));
-        const dates = pendingReviewed.map(({ date }) => date).sort();
-        const actualTransactions = dates.length > 0
-          ? await this.actualBudget.findTransactions(accountId,
-            pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[0]!, -7) : dates[0]!,
-            pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[dates.length - 1]!, 7) : dates[dates.length - 1]!)
-          : [];
-        const byImportId = new Map(actualTransactions
-          .filter((transaction) => transaction.imported_id)
-          .map((transaction) => [transaction.imported_id!, transaction]));
-
-        for (const reviewed of reviewedTransactions) {
-          const { transaction } = reviewed;
-          const record = recordsByTransactionId.get(transaction.id);
-          const actualTransactionId = record?.actual_transaction_id
-            ?? byImportId.get(transaction.stable_import_id)?.id;
-          if (!actualTransactionId) {
-            throw new Error('Actual Budget did not reconcile an imported transaction.');
-          }
-          const payee = reviewed.payee ?? await this.actualBudget.resolvePayee(reviewed.payee_name);
-          await this.actualBudget.updateTransaction(actualTransactionId, {
-            amount: reviewed.amount,
-            category: reviewed.category ?? null,
-            cleared: true,
-            date: reviewed.date,
-            imported_payee: reviewed.imported_payee,
-            notes: '',
-            payee,
-          });
-          if (transaction.transfer_account_id) {
-            if (!this.actualBudget.verifyTransfer) throw new Error('Actual Budget transfer verification is unavailable.');
-            await this.actualBudget.verifyTransfer(actualTransactionId, accountId, transaction.transfer_account_id, { ...reviewed, payee }, transaction.actual_category_id);
-          }
-          await this.database
-            .insertInto('publication_records')
-            .values({
-              actual_transaction_id: actualTransactionId,
-              published_at: this.now().toISOString(),
-              statement_transaction_id: transaction.id,
-            })
-            .onConflict((conflict) => conflict.column('statement_transaction_id').doUpdateSet({
-              actual_transaction_id: actualTransactionId,
-              published_at: this.now().toISOString(),
-            }))
+      const runSession = this.actualBudget.runSession?.bind(this.actualBudget) ?? ((operation: () => Promise<void>) => operation());
+      await runSession(async () => {
+        if (includedTransactions.length > 0) {
+          const publicationRecords = await this.database
+            .selectFrom('publication_records')
+            .select(['statement_transaction_id', 'actual_transaction_id'])
+            .where('statement_transaction_id', 'in', includedTransactions.map((transaction) => transaction.id))
             .execute();
-        }
-      }
+          const recordsByTransactionId = new Map(publicationRecords.map((record) => [record.statement_transaction_id, record]));
+          const reviewedTransactions = await Promise.all(includedTransactions.map(async (transaction) => {
+            const transfer = transaction.transfer_account_id
+              ? await this.actualBudget.resolveTransferPayee?.(transaction.transfer_account_id, accountId)
+              : null;
+            if (transaction.transfer_account_id && !transfer) throw new Error('Actual Budget transfers are unavailable.');
+            return {
+              transaction,
+              amount: transaction.reviewed_amount_cents ?? transaction.amount_cents,
+              category: transfer && !transfer.categoryAllowed ? null : transaction.actual_category_id,
+              cleared: true,
+              date: actualDate(transaction.reviewed_date ?? transaction.date),
+              imported_payee: transaction.description,
+              notes: '',
+              ...(transfer ? { payee: transfer.payeeId } : {}),
+              payee_name: transaction.reviewed_description ?? transaction.description,
+            };
+          }));
+          const pending = reviewedTransactions
+            .filter(({ transaction }) => !recordsByTransactionId.get(transaction.id)?.actual_transaction_id)
+            .map(({ transaction, payee_name, ...values }) => ({
+              ...values,
+              ...(values.payee ? {} : { payee_name }),
+              imported_id: transaction.stable_import_id,
+            }));
+          if (pending.length > 0) await this.actualBudget.importTransactions(accountId, pending);
 
-      await this.actualBudget.synchronize();
+          const pendingImportIds = new Set(pending.map((transaction) => transaction.imported_id));
+          const pendingReviewed = reviewedTransactions.filter(({ transaction }) => pendingImportIds.has(transaction.stable_import_id));
+          const dates = pendingReviewed.map(({ date }) => date).sort();
+          const actualTransactions = dates.length > 0
+            ? await this.actualBudget.findTransactions(accountId,
+              pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[0]!, -7) : dates[0]!,
+              pendingReviewed.some(({ transaction }) => transaction.transfer_account_id) ? offsetDate(dates[dates.length - 1]!, 7) : dates[dates.length - 1]!)
+            : [];
+          const byImportId = new Map(actualTransactions
+            .filter((transaction) => transaction.imported_id)
+            .map((transaction) => [transaction.imported_id!, transaction]));
+
+          for (const reviewed of reviewedTransactions) {
+            const { transaction } = reviewed;
+            const record = recordsByTransactionId.get(transaction.id);
+            const actualTransactionId = record?.actual_transaction_id
+              ?? byImportId.get(transaction.stable_import_id)?.id;
+            if (!actualTransactionId) {
+              throw new Error('Actual Budget did not reconcile an imported transaction.');
+            }
+            const payee = reviewed.payee ?? await this.actualBudget.resolvePayee(reviewed.payee_name);
+            await this.actualBudget.updateTransaction(actualTransactionId, {
+              amount: reviewed.amount,
+              category: reviewed.category ?? null,
+              cleared: true,
+              date: reviewed.date,
+              imported_payee: reviewed.imported_payee,
+              notes: '',
+              payee,
+            });
+            if (transaction.transfer_account_id) {
+              if (!this.actualBudget.verifyTransfer) throw new Error('Actual Budget transfer verification is unavailable.');
+              await this.actualBudget.verifyTransfer(actualTransactionId, accountId, transaction.transfer_account_id, { ...reviewed, payee }, transaction.actual_category_id);
+            }
+            await this.database
+              .insertInto('publication_records')
+              .values({
+                actual_transaction_id: actualTransactionId,
+                published_at: this.now().toISOString(),
+                statement_transaction_id: transaction.id,
+              })
+              .onConflict((conflict) => conflict.column('statement_transaction_id').doUpdateSet({
+                actual_transaction_id: actualTransactionId,
+                published_at: this.now().toISOString(),
+              }))
+              .execute();
+          }
+        }
+
+        await this.actualBudget.synchronize();
+      });
       await this.database
         .updateTable('statements')
         .set({ diagnostic_id: null, error_message: null, status: 'published', updated_at: this.now().toISOString() })

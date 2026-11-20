@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -21,11 +22,20 @@ export interface ActualAccountSource {
 
 export class ActualBudgetOperationError extends Error {}
 
+export class ActualBudgetRateLimitError extends Error {}
+
+const RATE_LIMIT_COOLDOWN_MS = 60_000;
+
 export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategorySource, ActualAccountSource {
   private queue = Promise.resolve();
   private initialized = false;
+  private readonly session = new AsyncLocalStorage<true>();
+  private rateLimitedUntil = 0;
 
-  constructor(private readonly configuration: ApplicationConfiguration) {}
+  constructor(
+    private readonly configuration: ApplicationConfiguration,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async importTransactions(accountId: string, transactions: Omit<ActualTransaction, 'id'>[]): Promise<void> {
     const imports = transactions.map(({ category, ...transaction }) => ({
@@ -172,7 +182,14 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
     throw new ActualBudgetOperationError('Actual Budget did not preserve the reviewed transaction or linked transfer.');
   }
 
+  async runSession<T>(operation: () => Promise<T>): Promise<T> {
+    return this.withBudget(operation);
+  }
+
   private async withBudget<T>(operation: () => Promise<T>): Promise<T> {
+    // Operations inside a running session share its single opening and
+    // closing sync; syncing around each one exceeds Actual's request limit.
+    if (this.session.getStore()) return operation();
     const previous = this.queue;
     let release!: () => void;
     this.queue = new Promise<void>((resolve) => { release = resolve; });
@@ -185,7 +202,7 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
       let result: T;
       try {
         await actual.sync();
-        result = await operation();
+        result = await this.session.run(true, operation);
       } catch (error) {
         if (error instanceof ActualBudgetOperationError) {
           await actual.sync().catch(() => this.reset());
@@ -215,6 +232,10 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
 
   private async ensureBudget(): Promise<void> {
     if (this.initialized) return;
+    const waitSeconds = Math.ceil((this.rateLimitedUntil - this.now()) / 1000);
+    if (waitSeconds > 0) {
+      throw new ActualBudgetRateLimitError(`Actual Budget is limiting requests. Try again in ${waitSeconds} seconds.`);
+    }
     const dataDirectory = join(this.configuration.dataDirectory, 'actual-cache');
     await mkdir(dataDirectory, { recursive: true });
     try {
@@ -229,6 +250,11 @@ export class ActualBudgetClient implements ActualBudgetPublisher, ActualCategory
         : undefined);
       this.initialized = true;
     } catch (error) {
+      // Actual's server counts every request against a per-minute limit;
+      // retrying sign-in before the window resets only prolongs the outage.
+      if (error instanceof Error && /too many requests/i.test(error.message)) {
+        this.rateLimitedUntil = this.now() + RATE_LIMIT_COOLDOWN_MS;
+      }
       await this.reset();
       throw error;
     }
